@@ -52,6 +52,7 @@ if os.environ.get("FRONTEND_URL"):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
+    allow_origin_regex=r"https://finance-management-[a-z0-9]+-chhavis005-9494s-projects\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],       # GET, POST, PUT, DELETE, OPTIONS …
     allow_headers=["*"],       # Content-Type, Authorization …
