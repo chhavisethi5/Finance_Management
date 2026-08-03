@@ -1,6 +1,9 @@
 import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+
+load_dotenv()
 
 # Database connection configuration. Use DATABASE_URL from the environment if set, otherwise fall back to a local SQLite database for development and testing.
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./finance.db")

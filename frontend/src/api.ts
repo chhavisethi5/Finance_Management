@@ -86,6 +86,16 @@ export interface Transaction {
   category: string;
   type: "income" | "expense";
   transaction_date: string;
+  comment: string | null;
+}
+
+/** Partial update payload for PUT /transactions/{id} — every field optional. */
+export interface TransactionUpdatePayload {
+  amount?: number;
+  category?: string;
+  type?: "income" | "expense";
+  transaction_date?: string;
+  comment?: string | null;
 }
 
 export interface BudgetBucketStatus {
@@ -155,6 +165,16 @@ export interface FinancialGoalCreatePayload {
   priority?: "High" | "Medium" | "Low";
 }
 
+/** Partial update payload for PUT /financial-goals/{goal_id} — every field optional. */
+export interface FinancialGoalUpdatePayload {
+  goal_name?: string;
+  category?: string;
+  target_amount?: number;
+  current_saved?: number;
+  target_date?: string;
+  priority?: "High" | "Medium" | "Low";
+}
+
 export interface EmergencyFundResponse {
   user_id: number;
   current_saved: number;
@@ -210,7 +230,16 @@ export const createTransaction = (payload: {
   category: string;
   type: "income" | "expense";
   transaction_date: string;
+  comment?: string;
 }) => api.post<Transaction>("/transactions/", payload).then((r) => r.data);
+
+/** Update an existing transaction's amount, category, type, date, or comment. */
+export const updateTransaction = (transaction_id: number, payload: TransactionUpdatePayload) =>
+  api.put<Transaction>(`/transactions/${transaction_id}`, payload).then((r) => r.data);
+
+/** Permanently delete a transaction. */
+export const deleteTransaction = (transaction_id: number) =>
+  api.delete<void>(`/transactions/${transaction_id}`).then(() => undefined);
 
 
 /** Fetch the budget vs. actuals status for a user. */
@@ -238,6 +267,10 @@ export const createFinancialGoal = (user_id: number, payload: FinancialGoalCreat
 /** Fetch every financial goal for a user. */
 export const getFinancialGoals = (user_id: number) =>
   api.get<FinancialGoal[]>(`/financial-goals/${user_id}`).then((r) => r.data);
+
+/** Update an existing financial goal's details or progress. */
+export const updateFinancialGoal = (goal_id: number, payload: FinancialGoalUpdatePayload) =>
+  api.put<FinancialGoal>(`/financial-goals/${goal_id}`, payload).then((r) => r.data);
 
 /** Fetch every transaction ever logged for a user, newest first. */
 export const getTransactions = (user_id: number) =>

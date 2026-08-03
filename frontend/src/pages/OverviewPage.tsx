@@ -32,7 +32,9 @@ import {
   TrendingUp,
   PieChart as PieChartIcon,
   BarChart3,
+  Pencil,
 } from "lucide-react";
+import EditGoalModal from "../components/EditGoalModal";
 import {
   ResponsiveContainer,
   BarChart,
@@ -98,6 +100,7 @@ export default function OverviewPage() {
   const [goalTarget, setGoalTarget] = useState("");
   const [goalSaved, setGoalSaved] = useState("");
   const [goalDate, setGoalDate] = useState("");
+  const [editingGoal, setEditingGoal] = useState<FinancialGoal | null>(null);
 
   // Emergency Fund State
   const [emergencyInput, setEmergencyInput] = useState("");
@@ -188,6 +191,7 @@ export default function OverviewPage() {
         priority: goalPriority,
       });
       setGoalSuccess("Goal created successfully!");
+      setTimeout(() => setGoalSuccess(""), 4000);
       setGoalName("");
       setGoalTarget("");
       setGoalSaved("");
@@ -200,6 +204,13 @@ export default function OverviewPage() {
     }
   };
 
+  const handleGoalUpdated = (updated: FinancialGoal) => {
+    setGoals((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+    setEditingGoal(null);
+    setGoalSuccess("Goal updated successfully!");
+    setTimeout(() => setGoalSuccess(""), 4000);
+  };
+
   const formatDate = (value: string) => {
     if (!value) return "N/A";
     return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(
@@ -210,11 +221,11 @@ export default function OverviewPage() {
   // Chart Data Preparation
   const overviewBarData = status
     ? [
-        { name: "Income", amount: Number(status.monthly_income), fill: "#34d399" },
-        { name: "Needs", amount: Number(status.needs.spent), fill: "#38bdf8" },
-        { name: "Wants", amount: Number(status.wants.spent), fill: "#a78bfa" },
-        { name: "Savings", amount: Math.max(0, Number(status.actual_savings)), fill: "#4f8ef7" },
-      ]
+      { name: "Income", amount: Number(status.monthly_income), fill: "#34d399" },
+      { name: "Needs", amount: Number(status.needs.spent), fill: "#38bdf8" },
+      { name: "Wants", amount: Number(status.wants.spent), fill: "#a78bfa" },
+      { name: "Savings", amount: Math.max(0, Number(status.actual_savings)), fill: "#4f8ef7" },
+    ]
     : [];
 
   const categoryPieData = status?.category_breakdown.map((c) => ({
@@ -234,7 +245,7 @@ export default function OverviewPage() {
     }
   };
 
-  const getStatusBadge = (code: string, label: string) => {
+  const getStatusBadge = (code: string, _label: string) => {
     switch (code) {
       case "completed":
         return "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
@@ -384,8 +395,8 @@ export default function OverviewPage() {
                   <XAxis dataKey="name" stroke="#64748b" fontSize={11} />
                   <YAxis stroke="#64748b" fontSize={10} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
                   <RechartsTooltip
-                    formatter={(val: number, _name: string, props: { payload?: { name?: string } }) => [
-                      formatINR(val),
+                    formatter={(val: any, _name, props: { payload?: { name?: string } }) => [
+                      formatINR(Number(val ?? 0)),
                       props?.payload?.name ?? "Amount",
                     ]}
                     contentStyle={{ backgroundColor: "#151827", borderColor: "#2d3348", borderRadius: "8px", color: "#f1f5f9", fontSize: "12px" }}
@@ -423,8 +434,8 @@ export default function OverviewPage() {
                       ))}
                     </Pie>
                     <RechartsTooltip
-                      formatter={(val: number, _name: string, props: { payload?: { name?: string } }) => [
-                        formatINR(val),
+                      formatter={(val: any, _name, props: { payload?: { name?: string } }) => [
+                        formatINR(Number(val ?? 0)),
                         props?.payload?.name ?? "Category",
                       ]}
                       labelFormatter={() => ""}
@@ -483,13 +494,12 @@ export default function OverviewPage() {
                 <p className="mt-0.5 text-xs text-[#f1f5f9]">6-Month Living Reserve Safety Net</p>
               </div>
               <span
-                className={`rounded-full px-2.5 py-1 text-xs font-bold border ${
-                  status.emergency_fund_status === "Fully Funded"
+                className={`rounded-full px-2.5 py-1 text-xs font-bold border ${status.emergency_fund_status === "Fully Funded"
                     ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
                     : status.emergency_fund_status === "Healthy"
-                    ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                    : "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                }`}
+                      ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                      : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                  }`}
               >
                 {status.emergency_fund_status}
               </span>
@@ -503,8 +513,8 @@ export default function OverviewPage() {
                 status.emergency_fund_saved >= status.emergency_fund_target
                   ? "green"
                   : status.emergency_fund_saved >= status.emergency_fund_target * 0.7
-                  ? "blue"
-                  : "orange"
+                    ? "blue"
+                    : "orange"
               }
               mode="saved"
             />
@@ -552,6 +562,12 @@ export default function OverviewPage() {
           </button>
         </div>
 
+        {goalSuccess && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">
+            {goalSuccess}
+          </div>
+        )}
+
         {goalLoading ? (
           <div className="py-8 text-center text-xs text-[#64748b]">Loading financial goals…</div>
         ) : goals.length === 0 ? (
@@ -575,9 +591,19 @@ export default function OverviewPage() {
                     </div>
                     <p className="text-xs text-[#64748b] mt-0.5">{goal.category} · {goal.horizon}</p>
                   </div>
-                  <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${getStatusBadge(goal.status_code, goal.status_label)}`}>
-                    {goal.status_label}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${getStatusBadge(goal.status_code, goal.status_label)}`}>
+                      {goal.status_label}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Edit goal"
+                      onClick={() => setEditingGoal(goal)}
+                      className="text-[#64748b] hover:text-[#4f8ef7] transition-colors"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Goal Progress Bar */}
@@ -737,6 +763,14 @@ export default function OverviewPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {editingGoal && (
+        <EditGoalModal
+          goal={editingGoal}
+          onClose={() => setEditingGoal(null)}
+          onSaved={handleGoalUpdated}
+        />
       )}
     </div>
   );

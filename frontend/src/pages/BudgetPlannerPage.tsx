@@ -151,17 +151,17 @@ export default function BudgetPlannerPage() {
   const activeTier =
     selectedTier === "custom"
       ? {
-          value: "custom",
-          label: "Custom",
-          needs: customAllocation.needs,
-          wants: customAllocation.wants,
-          savings: customAllocation.savings,
-          icon: "🛠️",
-          description: "Build your own split with live sliders and save your tailored plan.",
-          accentClass: "text-[#f97316]",
-          gradientFrom: "#f97316",
-          gradientTo: "#f59e0b",
-        }
+        value: "custom",
+        label: "Custom",
+        needs: customAllocation.needs,
+        wants: customAllocation.wants,
+        savings: customAllocation.savings,
+        icon: "🛠️",
+        description: "Build your own split with live sliders and save your tailored plan.",
+        accentClass: "text-[#f97316]",
+        gradientFrom: "#f97316",
+        gradientTo: "#f59e0b",
+      }
       : TIERS.find((t) => t.value === selectedTier)!;
 
   const updateCustomAllocation = (bucket: keyof typeof customAllocation, value: number) => {
@@ -240,10 +240,10 @@ export default function BudgetPlannerPage() {
         selectedTier,
         selectedTier === "custom"
           ? {
-              custom_needs_pct: customAllocation.needs,
-              custom_wants_pct: customAllocation.wants,
-              custom_savings_pct: customAllocation.savings,
-            }
+            custom_needs_pct: customAllocation.needs,
+            custom_wants_pct: customAllocation.wants,
+            custom_savings_pct: customAllocation.savings,
+          }
           : undefined
       );
       setSuccess(

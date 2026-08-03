@@ -7,19 +7,18 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { createTransaction, getTransactions, formatINR, getErrorMessage } from "../api";
+import { Pencil, Trash2 } from "lucide-react";
+import {
+  createTransaction,
+  getTransactions,
+  deleteTransaction,
+  formatINR,
+  getErrorMessage,
+} from "../api";
 import type { Transaction } from "../api";
 import { useAuth } from "../context/AuthContext";
-
-const INCOME_CATEGORIES = [
-  "Salary", "Freelance", "Investments", "Business",
-  "Gifts & Bonuses", "Side Hustle", "Other Income",
-];
-
-const EXPENSE_CATEGORIES = [
-  "Rent & Housing", "Groceries", "Dining & Food", "Utilities & Bills",
-  "Transport", "Shopping", "Entertainment", "Healthcare", "Debt & EMI", "Others",
-];
+import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from "../constants/categories";
+import EditTransactionModal from "../components/EditTransactionModal";
 
 export default function TransactionsPage() {
   const { currentUser } = useAuth();
@@ -30,12 +29,15 @@ export default function TransactionsPage() {
   const [customCategory, setCustomCategory] = useState("");
   const [type, setType] = useState<"income" | "expense">("expense");
   const [date, setDate] = useState(today);
+  const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [historyError, setHistoryError] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const fetchTransactions = async () => {
     if (!currentUser) return;
@@ -83,17 +85,42 @@ export default function TransactionsPage() {
         category: resolvedCategory,
         type,
         transaction_date: date,
+        comment: comment.trim() || undefined,
       });
       setSuccess("Transaction logged successfully! ✓");
       await fetchTransactions();
       setAmount("");
       setCategory("");
       setCustomCategory("");
+      setComment("");
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Failed to log transaction."));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDelete = async (tx: Transaction) => {
+    const confirmed = window.confirm(
+      `Delete this ${tx.type} of ${formatINR(Number(tx.amount))} (${tx.category})? This can't be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeletingId(tx.id);
+    setHistoryError("");
+    try {
+      await deleteTransaction(tx.id);
+      setTransactions((prev) => prev.filter((t) => t.id !== tx.id));
+    } catch (err: unknown) {
+      setHistoryError(getErrorMessage(err, "Failed to delete transaction."));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleEditSaved = (updated: Transaction) => {
+    setTransactions((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    setEditingTx(null);
   };
 
   return (
@@ -191,6 +218,19 @@ export default function TransactionsPage() {
               />
             </div>
 
+            {/* Comments / Note (optional) */}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="tx-comment">Comments / Note (optional)</label>
+              <textarea
+                id="tx-comment"
+                rows={2}
+                maxLength={255}
+                placeholder="e.g. Dinner with friends"
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+              />
+            </div>
+
             {error && <div className="alert alert-error">{error}</div>}
             {success && <div className="alert alert-success">{success}</div>}
 
@@ -236,30 +276,60 @@ export default function TransactionsPage() {
               {recentTx.map((tx) => (
                 <li
                   key={tx.id}
-                  className="flex items-center justify-between rounded-xl border border-[#2d3348] bg-[#22263a] px-4 py-3"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-[#2d3348] bg-[#22263a] px-4 py-3"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <span className="text-base">
                       {tx.type === "expense" ? "💸" : "💰"}
                     </span>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-medium text-[#f1f5f9]">{tx.category}</p>
                       <p className="text-xs text-[#475569]">{tx.transaction_date}</p>
+                      {tx.comment && (
+                        <p className="text-xs text-[#64748b] italic mt-0.5 truncate">“{tx.comment}”</p>
+                      )}
                     </div>
                   </div>
-                  <span
-                    className={`text-sm font-semibold ${tx.type === "expense" ? "text-[#f87171]" : "text-[#34d399]"
-                      }`}
-                  >
-                    {tx.type === "expense" ? "−" : "+"}
-                    {formatINR(Number(tx.amount))}
-                  </span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span
+                      className={`text-sm font-semibold ${tx.type === "expense" ? "text-[#f87171]" : "text-[#34d399]"
+                        }`}
+                    >
+                      {tx.type === "expense" ? "−" : "+"}
+                      {formatINR(Number(tx.amount))}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Edit transaction"
+                      onClick={() => setEditingTx(tx)}
+                      className="text-[#64748b] hover:text-[#4f8ef7] transition-colors"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Delete transaction"
+                      disabled={deletingId === tx.id}
+                      onClick={() => handleDelete(tx)}
+                      className="text-[#64748b] hover:text-[#f87171] transition-colors disabled:opacity-50"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
         </div>
       </div>
+
+      {editingTx && (
+        <EditTransactionModal
+          transaction={editingTx}
+          onClose={() => setEditingTx(null)}
+          onSaved={handleEditSaved}
+        />
+      )}
     </div>
   );
 }

@@ -47,6 +47,8 @@ class Transaction(Base):
     category = Column(String(100), nullable=False)
     type = Column(String(50), nullable=False)  # 'income' or 'expense'
     transaction_date = Column("date", Date, nullable=False)
+    # Optional free-text note the user can attach to a transaction (e.g. "Dinner with Raj").
+    comment = Column(String(255), nullable=True)
 
     # Relationship back to the User model
     user = relationship("User", back_populates="transactions")

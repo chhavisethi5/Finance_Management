@@ -7,15 +7,42 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getTransactions, formatINR, getErrorMessage } from "../api";
+import { Pencil, Trash2 } from "lucide-react";
+import { getTransactions, deleteTransaction, formatINR, getErrorMessage } from "../api";
 import type { Transaction } from "../api";
 import { useAuth } from "../context/AuthContext";
+import EditTransactionModal from "../components/EditTransactionModal";
 
 export default function TransactionHistoryPage() {
     const { currentUser } = useAuth();
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+    const [deletingId, setDeletingId] = useState<number | null>(null);
+
+    const handleDelete = async (tx: Transaction) => {
+        const confirmed = window.confirm(
+            `Delete this ${tx.type} of ${formatINR(Number(tx.amount))} (${tx.category})? This can't be undone.`
+        );
+        if (!confirmed) return;
+
+        setDeletingId(tx.id);
+        setError("");
+        try {
+            await deleteTransaction(tx.id);
+            setTransactions((prev) => prev.filter((t) => t.id !== tx.id));
+        } catch (err: unknown) {
+            setError(getErrorMessage(err, "Failed to delete transaction."));
+        } finally {
+            setDeletingId(null);
+        }
+    };
+
+    const handleEditSaved = (updated: Transaction) => {
+        setTransactions((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+        setEditingTx(null);
+    };
 
     useEffect(() => {
         if (!currentUser) return;
@@ -107,7 +134,9 @@ export default function TransactionHistoryPage() {
                                     <th className="pb-3 text-left font-medium">Date</th>
                                     <th className="pb-3 text-left font-medium">Category</th>
                                     <th className="pb-3 text-left font-medium">Type</th>
+                                    <th className="pb-3 text-left font-medium">Comment</th>
                                     <th className="pb-3 text-right font-medium">Amount</th>
+                                    <th className="pb-3 text-right font-medium">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -118,12 +147,15 @@ export default function TransactionHistoryPage() {
                                         <td className="py-3">
                                             <span
                                                 className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${tx.type === "expense"
-                                                        ? "bg-[#f87171]/10 text-[#f87171]"
-                                                        : "bg-[#34d399]/10 text-[#34d399]"
+                                                    ? "bg-[#f87171]/10 text-[#f87171]"
+                                                    : "bg-[#34d399]/10 text-[#34d399]"
                                                     }`}
                                             >
                                                 {tx.type === "expense" ? "💸 Expense" : "💰 Income"}
                                             </span>
+                                        </td>
+                                        <td className="py-3 text-[#64748b] italic max-w-[220px] truncate">
+                                            {tx.comment ? `“${tx.comment}”` : <span className="not-italic text-[#334155]">—</span>}
                                         </td>
                                         <td
                                             className={`py-3 text-right font-semibold ${tx.type === "expense" ? "text-[#f87171]" : "text-[#34d399]"
@@ -132,6 +164,27 @@ export default function TransactionHistoryPage() {
                                             {tx.type === "expense" ? "−" : "+"}
                                             {formatINR(Number(tx.amount))}
                                         </td>
+                                        <td className="py-3">
+                                            <div className="flex items-center justify-end gap-3">
+                                                <button
+                                                    type="button"
+                                                    aria-label="Edit transaction"
+                                                    onClick={() => setEditingTx(tx)}
+                                                    className="text-[#64748b] hover:text-[#4f8ef7] transition-colors"
+                                                >
+                                                    <Pencil size={15} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    aria-label="Delete transaction"
+                                                    disabled={deletingId === tx.id}
+                                                    onClick={() => handleDelete(tx)}
+                                                    className="text-[#64748b] hover:text-[#f87171] transition-colors disabled:opacity-50"
+                                                >
+                                                    <Trash2 size={15} />
+                                                </button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -139,6 +192,14 @@ export default function TransactionHistoryPage() {
                     </div>
                 )}
             </div>
+
+            {editingTx && (
+                <EditTransactionModal
+                    transaction={editingTx}
+                    onClose={() => setEditingTx(null)}
+                    onSaved={handleEditSaved}
+                />
+            )}
         </div>
     );
 }

@@ -138,7 +138,8 @@ def create_transaction(transaction: schemas.TransactionCreate, db: Session = Dep
         amount=transaction.amount,
         category=transaction.category,
         type=transaction.type,
-        transaction_date=transaction.transaction_date
+        transaction_date=transaction.transaction_date,
+        comment=transaction.comment.strip() if transaction.comment else None,
     )
     db.add(new_transaction)
     db.commit()
@@ -172,6 +173,93 @@ def get_transactions(user_id: int, db: Session = Depends(get_db)):
         .order_by(models.Transaction.transaction_date.desc(), models.Transaction.id.desc())
         .all()
     )
+
+
+@app.put(
+    "/transactions/{transaction_id}",
+    response_model=schemas.TransactionResponse,
+    summary="Update an existing transaction",
+    tags=["Transactions"],
+)
+def update_transaction(
+    transaction_id: int,
+    update: schemas.TransactionUpdate,
+    db: Session = Depends(get_db),
+):
+    """
+    Partially update a transaction's amount, category, type, date, or comment.
+
+    Only fields explicitly present in the request body are changed
+    (`exclude_unset=True`) — omitted fields keep their current value.
+    Because /summary and /budget-status compute totals live from the
+    transactions table, editing here is immediately reflected everywhere.
+    The one place with *cached* state is the monthly_savings snapshot table,
+    so if the edit touches a month that's already been finalized there,
+    we recalculate that snapshot too.
+    """
+    db_txn = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
+    if not db_txn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transaction with ID {transaction_id} not found",
+        )
+
+    update_data = update.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided to update.")
+
+    original_date = db_txn.transaction_date
+
+    if "comment" in update_data and update_data["comment"] is not None:
+        update_data["comment"] = update_data["comment"].strip() or None
+
+    for field, value in update_data.items():
+        setattr(db_txn, field, value)
+
+    db.commit()
+    db.refresh(db_txn)
+
+    # Keep finalized monthly-savings snapshots in sync with the edited transaction.
+    db_user = db.query(models.User).filter(models.User.id == db_txn.user_id).first()
+    if db_user:
+        for year_month in {_month_key(original_date), _month_key(db_txn.transaction_date)}:
+            _resync_monthly_savings_snapshot(db_user, year_month, db)
+
+    return db_txn
+
+
+@app.delete(
+    "/transactions/{transaction_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a transaction",
+    tags=["Transactions"],
+)
+def delete_transaction(transaction_id: int, db: Session = Depends(get_db)):
+    """
+    Permanently remove a transaction. Since account balances and budget
+    status are always computed live from the transactions table, deleting
+    a row here immediately updates /summary and /budget-status. The
+    finalized monthly_savings snapshot for the deleted transaction's month
+    (if one exists) is recalculated so historical rollups stay accurate.
+    """
+    db_txn = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
+    if not db_txn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Transaction with ID {transaction_id} not found",
+        )
+
+    user_id = db_txn.user_id
+    affected_month = _month_key(db_txn.transaction_date)
+
+    db.delete(db_txn)
+    db.commit()
+
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if db_user:
+        _resync_monthly_savings_snapshot(db_user, affected_month, db)
+
+    return None
 
 
 @app.get("/summary/{user_id}", response_model=schemas.FinancialSummary)
@@ -328,6 +416,51 @@ def _refresh_monthly_savings_snapshots(db_user: models.User, db: Session) -> Non
 
     if added:
         db.commit()
+
+
+def _resync_monthly_savings_snapshot(db_user: models.User, year_month: str, db: Session) -> None:
+    """
+    Recalculate one already-finalized monthly_savings row after a past
+    transaction in that month was edited or deleted.
+
+    _refresh_monthly_savings_snapshots() only ever *adds* missing months —
+    it never revisits a month once it has a row, since normally those are
+    immutable history. Editing/deleting breaks that assumption, so this
+    targeted recalculation keeps the snapshot (used for savings-history
+    charts) consistent with the live transactions table. If no snapshot
+    exists yet for this month (e.g. it's the current, still-open month),
+    there's nothing to fix — /summary and /budget-status already compute
+    that month live.
+    """
+    if db_user.monthly_income is None:
+        return
+
+    row = (
+        db.query(models.MonthlySavings)
+        .filter(
+            models.MonthlySavings.user_id == db_user.id,
+            models.MonthlySavings.year_month == year_month,
+        )
+        .first()
+    )
+    if not row:
+        return
+
+    month_start = date(int(year_month[:4]), int(year_month[5:7]), 1)
+    month_end = _next_month(month_start)
+    expenses = sum(
+        txn.amount
+        for txn in db.query(models.Transaction)
+        .filter(
+            models.Transaction.user_id == db_user.id,
+            models.Transaction.type == "expense",
+            models.Transaction.transaction_date >= month_start,
+            models.Transaction.transaction_date < month_end,
+        )
+        .all()
+    )
+    row.savings_amount = (db_user.monthly_income - expenses).quantize(Decimal("0.01"))
+    db.commit()
 
 
 def _serialize_financial_goal(goal: models.FinancialGoal) -> schemas.FinancialGoalResponse:
@@ -865,3 +998,50 @@ def list_financial_goals(user_id: int, db: Session = Depends(get_db)):
     )
 
     return [_serialize_financial_goal(goal) for goal in goals]
+
+@app.put(
+    "/financial-goals/{goal_id}",
+    response_model=schemas.FinancialGoalResponse,
+    summary="Update an existing financial goal",
+    tags=["Goals"],
+)
+def update_financial_goal(
+    goal_id: int,
+    goal_in: schemas.FinancialGoalUpdate,
+    db: Session = Depends(get_db),
+):
+    """
+    Partially update a goal's name, category, target amount, saved amount,
+    target date, or priority. Only fields present in the request body are
+    changed. progress_pct, monthly_target, status, and every other derived
+    field are recalculated from the merged values via _serialize_financial_goal
+    — the client never has to redo that math itself.
+    """
+    db_goal = db.query(models.FinancialGoal).filter(models.FinancialGoal.id == goal_id).first()
+    if not db_goal:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Financial goal with ID {goal_id} not found",
+        )
+
+    update_data = goal_in.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided to update.")
+
+    if "goal_name" in update_data:
+        db_goal.goal_name = update_data["goal_name"].strip()
+    if "category" in update_data:
+        db_goal.category = update_data["category"].strip()
+    if "target_amount" in update_data:
+        db_goal.target_amount = update_data["target_amount"].quantize(Decimal("0.01"))
+    if "current_saved" in update_data:
+        db_goal.current_saved = update_data["current_saved"].quantize(Decimal("0.01"))
+    if "target_date" in update_data:
+        db_goal.target_date = update_data["target_date"]
+    if "priority" in update_data:
+        db_goal.priority = update_data["priority"]
+
+    db.commit()
+    db.refresh(db_goal)
+
+    return _serialize_financial_goal(db_goal)

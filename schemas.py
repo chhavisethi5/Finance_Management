@@ -111,6 +111,11 @@ class TransactionBase(BaseModel):
         ..., 
         description="Transaction date (YYYY-MM-DD)"
     )
+    comment: str | None = Field(
+        None,
+        max_length=255,
+        description="Optional free-text note about the transaction, e.g. 'Dinner with friends'",
+    )
 
 class TransactionCreate(TransactionBase):
     user_id: int
@@ -121,6 +126,23 @@ class TransactionResponse(TransactionBase):
 
     class Config:
         from_attributes = True
+
+
+class TransactionUpdate(BaseModel):
+    """
+    Request body for PUT /transactions/{transaction_id}.
+
+    Every field is optional so the client can send only what changed —
+    e.g. editing just the comment shouldn't require resubmitting the amount.
+    """
+
+    amount: Decimal | None = Field(
+        None, gt=0, max_digits=10, decimal_places=2, description="Transaction amount (must be positive)"
+    )
+    category: str | None = Field(None, min_length=1, max_length=100, description="Transaction category")
+    type: Literal["income", "expense"] | None = Field(None, description="Transaction type: income or expense")
+    transaction_date: date | None = Field(None, description="Transaction date (YYYY-MM-DD)")
+    comment: str | None = Field(None, max_length=255, description="Optional free-text note about the transaction")
 
 
 # -------------------------
@@ -308,6 +330,23 @@ class FinancialGoalCreate(BaseModel):
     current_saved: Decimal = Field(..., ge=0, max_digits=14, decimal_places=2, description="Amount already saved toward the goal")
     target_date: date = Field(..., description="Goal completion date")
     priority: Literal["High", "Medium", "Low"] = Field("Medium", description="Goal priority level: High, Medium, Low")
+
+
+class FinancialGoalUpdate(BaseModel):
+    """
+    Request body for PUT /financial-goals/{goal_id}.
+
+    Every field is optional — send only what changed. Progress percentage,
+    monthly pace, and status are recalculated server-side from whatever the
+    final merged values end up being, so the client never computes them.
+    """
+
+    goal_name: str | None = Field(None, min_length=1, max_length=255, description="Friendly name for the savings goal")
+    category: str | None = Field(None, min_length=1, max_length=100, description="Goal category, e.g. Home, Vacation")
+    target_amount: Decimal | None = Field(None, gt=0, max_digits=14, decimal_places=2, description="Goal target amount")
+    current_saved: Decimal | None = Field(None, ge=0, max_digits=14, decimal_places=2, description="Amount already saved")
+    target_date: date | None = Field(None, description="Goal completion date")
+    priority: Literal["High", "Medium", "Low"] | None = Field(None, description="Goal priority level")
 
 
 class FinancialGoalResponse(BaseModel):
