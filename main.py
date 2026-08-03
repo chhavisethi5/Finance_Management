@@ -1,3 +1,4 @@
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -41,7 +42,12 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # permit every origin
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "*"
+    ],
     allow_credentials=True,
     allow_methods=["*"],       # GET, POST, PUT, DELETE, OPTIONS …
     allow_headers=["*"],       # Content-Type, Authorization …
@@ -188,12 +194,12 @@ def get_financial_summary(user_id: int, db: Session = Depends(get_db)):
     total_income = sum((t.amount for t in transactions if t.type == "income"), Decimal("0.00"))
     total_expenses = sum((t.amount for t in transactions if t.type == "expense"), Decimal("0.00"))
     
-    # Remaining balance = monthly_income + total_income - total_expenses
-    remaining_balance = db_user.monthly_income + total_income - total_expenses
+    user_income = db_user.monthly_income or Decimal("0.00")
+    remaining_balance = user_income + total_income - total_expenses
     
     return schemas.FinancialSummary(
         user_id=user_id,
-        monthly_income=db_user.monthly_income,
+        monthly_income=user_income,
         total_income=total_income,
         total_expenses=total_expenses,
         remaining_balance=remaining_balance
@@ -204,12 +210,186 @@ def get_financial_summary(user_id: int, db: Session = Depends(get_db)):
 # Phase 2 – Smart Budget Allocation
 # ===========================================================================
 
-# Categories treated as 'needs' (essential living expenses).
-# Anything not in this set is classified as a 'want'.
-NEEDS_CATEGORIES = {"rent", "groceries", "utilities", "transport", "healthcare"}
+# Categories treated as 'needs' (essential living expenses), normalised to lowercase.
+# Matches the exact category strings defined in the frontend TransactionsPage.
+NEEDS_CATEGORIES = {
+    # Exact lowercase versions of the UI category labels
+    "rent & housing",
+    "groceries",
+    "utilities & bills",
+    "transport",
+    "healthcare",
+    "debt & emi",
+    # Legacy short-form aliases kept for backward compatibility
+    "rent",
+    "utilities",
+}
 
 
-def _upsert_budget_plan(db: Session, db_user: models.User, lifestyle_tier: str) -> models.BudgetPlan:
+def _first_of_month(value: date) -> date:
+    return date(value.year, value.month, 1)
+
+
+def _next_month(value: date) -> date:
+    if value.month == 12:
+        return date(value.year + 1, 1, 1)
+    return date(value.year, value.month + 1, 1)
+
+
+def _month_key(value: date) -> str:
+    return value.strftime("%Y-%m")
+
+
+def _iterate_months(start: date, stop_exclusive: date):
+    cursor = start
+    while cursor < stop_exclusive:
+        yield cursor
+        cursor = _next_month(cursor)
+
+
+def _months_remaining(target_date: date) -> int:
+    today = date.today()
+    month_delta = (target_date.year - today.year) * 12 + (target_date.month - today.month)
+    if target_date.day > today.day:
+        month_delta += 1
+    return max(1, month_delta)
+
+
+def _goal_horizon(target_date: date) -> str:
+    days = (target_date - date.today()).days
+    if days < 365:
+        return "Short-Term"
+    if days < 365 * 3:
+        return "Medium-Term"
+    return "Long-Term"
+
+
+def _calculate_emergency_fund_target(db_user: models.User, db: Session) -> Decimal:
+    plan = db.query(models.BudgetPlan).filter(models.BudgetPlan.user_id == db_user.id).first()
+    income = db_user.monthly_income or Decimal("0.00")
+    baseline = plan.needs_target if plan else (income * Decimal("0.50"))
+    return (baseline * Decimal("6")).quantize(Decimal("0.01"))
+
+
+def _refresh_monthly_savings_snapshots(db_user: models.User, db: Session) -> None:
+    if db_user.monthly_income is None:
+        return
+
+    today = date.today()
+    current_month = _first_of_month(today)
+    if db_user.onboarded_at:
+        start_month = _first_of_month(db_user.onboarded_at)
+    else:
+        earliest_txn = (
+            db.query(models.Transaction)
+            .filter(models.Transaction.user_id == db_user.id)
+            .order_by(models.Transaction.transaction_date.asc())
+            .first()
+        )
+        start_month = _first_of_month(earliest_txn.transaction_date) if earliest_txn else current_month
+
+    if start_month >= current_month:
+        return
+
+    existing_months = {
+        row.year_month
+        for row in db.query(models.MonthlySavings.year_month)
+        .filter(models.MonthlySavings.user_id == db_user.id)
+        .all()
+    }
+
+    added = False
+    for month_start in _iterate_months(start_month, current_month):
+        month_key = _month_key(month_start)
+        if month_key in existing_months:
+            continue
+
+        month_end = _next_month(month_start)
+        expenses = sum(
+            txn.amount
+            for txn in db.query(models.Transaction)
+            .filter(
+                models.Transaction.user_id == db_user.id,
+                models.Transaction.type == "expense",
+                models.Transaction.transaction_date >= month_start,
+                models.Transaction.transaction_date < month_end,
+            )
+            .all()
+        )
+        savings_amount = (db_user.monthly_income - expenses).quantize(Decimal("0.01"))
+        db.add(
+            models.MonthlySavings(
+                user_id=db_user.id,
+                year_month=month_key,
+                savings_amount=savings_amount,
+            )
+        )
+        added = True
+
+    if added:
+        db.commit()
+
+
+def _serialize_financial_goal(goal: models.FinancialGoal) -> schemas.FinancialGoalResponse:
+    today = date.today()
+    priority = getattr(goal, "priority", "Medium") or "Medium"
+    days_remaining = (goal.target_date - today).days
+    months_remaining = _months_remaining(goal.target_date)
+    remaining_amount = max(Decimal("0.00"), goal.target_amount - goal.current_saved)
+    
+    monthly_target = (remaining_amount / Decimal(max(1, months_remaining))).quantize(Decimal("0.01"))
+    progress_pct = (
+        min(Decimal("100"), (goal.current_saved / goal.target_amount) * Decimal("100"))
+        if goal.target_amount > 0 else Decimal("100")
+    ).quantize(Decimal("0.01"))
+
+    # Forecasting & status determinations
+    if goal.current_saved >= goal.target_amount:
+        status_code = "completed"
+        status_label = "Completed"
+        estimated_completion_date = today
+    elif days_remaining < 0:
+        status_code = "overdue"
+        status_label = "Overdue"
+        estimated_completion_date = goal.target_date
+    else:
+        estimated_completion_date = goal.target_date
+        if progress_pct >= Decimal("50") or days_remaining > 90:
+            status_code = "on_track"
+            status_label = "On Track"
+        else:
+            status_code = "behind"
+            status_label = "Behind Schedule"
+
+    return schemas.FinancialGoalResponse(
+        id=goal.id,
+        user_id=goal.user_id,
+        goal_name=goal.goal_name,
+        category=goal.category,
+        target_amount=goal.target_amount,
+        current_saved=goal.current_saved,
+        target_date=goal.target_date,
+        priority=priority,
+        monthly_target=monthly_target,
+        progress_pct=progress_pct,
+        months_remaining=max(0, months_remaining),
+        days_remaining=days_remaining,
+        remaining_amount=remaining_amount,
+        estimated_completion_date=estimated_completion_date,
+        status_code=status_code,
+        status_label=status_label,
+        horizon=_goal_horizon(goal.target_date),
+    )
+
+
+def _upsert_budget_plan(
+    db: Session,
+    db_user: models.User,
+    lifestyle_tier: str,
+    custom_needs_pct: Decimal | None = None,
+    custom_wants_pct: Decimal | None = None,
+    custom_savings_pct: Decimal | None = None,
+) -> models.BudgetPlan:
     """
     Shared logic: calculate and persist a budget plan for db_user.
 
@@ -220,26 +400,50 @@ def _upsert_budget_plan(db: Session, db_user: models.User, lifestyle_tier: str) 
     Used by both POST /budget-plan/ (change tier later) and
     POST /onboarding/{user_id} (set tier for the first time).
     """
-    # Defensive normalization: even though the request schemas already
-    # lowercase/strip this value, re-normalizing here means this helper is
-    # safe to call from anywhere, not just from a validated Pydantic model.
     lifestyle_tier = lifestyle_tier.strip().lower()
-    if lifestyle_tier not in schemas.LIFESTYLE_TIERS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Invalid lifestyle_tier '{lifestyle_tier}'. "
-                f"Must be one of: {', '.join(schemas.LIFESTYLE_TIERS.keys())}"
-            ),
-        )
 
-    tier = schemas.LIFESTYLE_TIERS[lifestyle_tier]
-    
-    income = db_user.monthly_income  # Decimal from DB
+    if lifestyle_tier == "custom":
+        if custom_needs_pct is None or custom_wants_pct is None or custom_savings_pct is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Custom tier requires all three allocation percentages."
+            )
 
-    needs_target   = (income * tier["needs"]).quantize(Decimal("0.01"))
-    wants_target   = (income * tier["wants"]).quantize(Decimal("0.01"))
-    savings_target = (income * tier["savings"]).quantize(Decimal("0.01"))
+        needs_pct = custom_needs_pct.quantize(Decimal("0.01"))
+        wants_pct = custom_wants_pct.quantize(Decimal("0.01"))
+        savings_pct = custom_savings_pct.quantize(Decimal("0.01"))
+        total_pct = needs_pct + wants_pct + savings_pct
+        if total_pct != Decimal("100"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Custom allocations must sum to exactly 100%."
+            )
+
+        needs_frac = needs_pct / Decimal("100")
+        wants_frac = wants_pct / Decimal("100")
+        savings_frac = savings_pct / Decimal("100")
+    else:
+        if lifestyle_tier not in schemas.LIFESTYLE_TIERS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Invalid lifestyle_tier '{lifestyle_tier}'. "
+                    f"Must be one of: {', '.join(list(schemas.LIFESTYLE_TIERS.keys()) + ['custom'])}"
+                ),
+            )
+
+        tier = schemas.LIFESTYLE_TIERS[lifestyle_tier]
+        needs_frac = tier["needs"]
+        wants_frac = tier["wants"]
+        savings_frac = tier["savings"]
+        needs_pct = (needs_frac * Decimal("100")).quantize(Decimal("0.01"))
+        wants_pct = (wants_frac * Decimal("100")).quantize(Decimal("0.01"))
+        savings_pct = (savings_frac * Decimal("100")).quantize(Decimal("0.01"))
+
+    income = db_user.monthly_income
+    needs_target = (income * needs_frac).quantize(Decimal("0.01"))
+    wants_target = (income * wants_frac).quantize(Decimal("0.01"))
+    savings_target = (income * savings_frac).quantize(Decimal("0.01"))
 
     existing_plan = (
         db.query(models.BudgetPlan)
@@ -249,9 +453,12 @@ def _upsert_budget_plan(db: Session, db_user: models.User, lifestyle_tier: str) 
 
     if existing_plan:
         existing_plan.lifestyle_tier = lifestyle_tier
-        existing_plan.needs_target   = needs_target
-        existing_plan.wants_target   = wants_target
+        existing_plan.needs_target = needs_target
+        existing_plan.wants_target = wants_target
         existing_plan.savings_target = savings_target
+        existing_plan.needs_pct = needs_pct
+        existing_plan.wants_pct = wants_pct
+        existing_plan.savings_pct = savings_pct
         db.commit()
         db.refresh(existing_plan)
         return existing_plan
@@ -262,6 +469,9 @@ def _upsert_budget_plan(db: Session, db_user: models.User, lifestyle_tier: str) 
         needs_target=needs_target,
         wants_target=wants_target,
         savings_target=savings_target,
+        needs_pct=needs_pct,
+        wants_pct=wants_pct,
+        savings_pct=savings_pct,
     )
     db.add(new_plan)
     db.commit()
@@ -293,7 +503,14 @@ def create_budget_plan(
             detail="User has not completed onboarding yet (no monthly_income set).",
         )
 
-    return _upsert_budget_plan(db, db_user, plan_in.lifestyle_tier)
+    return _upsert_budget_plan(
+        db,
+        db_user,
+        plan_in.lifestyle_tier,
+        plan_in.custom_needs_pct,
+        plan_in.custom_wants_pct,
+        plan_in.custom_savings_pct,
+    )
 
 
 @app.get(
@@ -350,10 +567,18 @@ def complete_onboarding(
 
     db_user.name = onboarding_in.name
     db_user.monthly_income = onboarding_in.monthly_income
+    db_user.onboarded_at = db_user.onboarded_at or date.today()
     db.commit()
     db.refresh(db_user)
 
-    plan = _upsert_budget_plan(db, db_user, onboarding_in.lifestyle_tier)
+    plan = _upsert_budget_plan(
+        db,
+        db_user,
+        onboarding_in.lifestyle_tier,
+        onboarding_in.custom_needs_pct,
+        onboarding_in.custom_wants_pct,
+        onboarding_in.custom_savings_pct,
+    )
 
     return schemas.OnboardingResponse(user=db_user, budget_plan=plan)
 
@@ -399,37 +624,115 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
             ),
         )
 
-    # --- 3. Load all expense transactions for this user ---
+    current_month = _first_of_month(date.today())
+ 
+    # --- 3. Load current-month expense transactions for this user ---
     expenses = (
         db.query(models.Transaction)
         .filter(
             models.Transaction.user_id == user_id,
             models.Transaction.type == "expense",
+            models.Transaction.transaction_date >= current_month,
+            models.Transaction.transaction_date < _next_month(current_month),
         )
         .all()
     )
-
+ 
     # --- 4. Aggregate spend per category and bucket ---
     category_totals: dict[str, Decimal] = defaultdict(Decimal)
     needs_spent = Decimal("0.00")
     wants_spent = Decimal("0.00")
-
+ 
     for txn in expenses:
         category_key = txn.category.lower().strip()
         category_totals[txn.category] += txn.amount   # preserve original casing for display
-
+ 
         if category_key in NEEDS_CATEGORIES:
             needs_spent += txn.amount
         else:
             wants_spent += txn.amount
-
+ 
     total_expenses = needs_spent + wants_spent
+ 
+    # --- 5. Finalize past monthly savings snapshots and compute rollover metrics ---
+    _refresh_monthly_savings_snapshots(db_user, db)
+ 
+    current_month_expenses = total_expenses
 
-    # --- 5. Calculate savings status ---
-    actual_savings   = db_user.monthly_income - total_expenses
-    savings_remaining = plan.savings_target - actual_savings
+    user_income = db_user.monthly_income or Decimal("0.00")
+    monthly_savings = (user_income - current_month_expenses).quantize(Decimal("0.01"))
+    
+    past_savings = sum(
+        row.savings_amount
+        for row in db.query(models.MonthlySavings)
+        .filter(
+            models.MonthlySavings.user_id == user_id,
+            models.MonthlySavings.year_month < _month_key(current_month),
+        )
+        .all()
+    )
+    actual_savings = (user_income - total_expenses).quantize(Decimal("0.01"))
+    total_savings = past_savings + (actual_savings if actual_savings > Decimal("0.00") else Decimal("0.00"))
+ 
+    savings_remaining = (plan.savings_target - actual_savings).quantize(Decimal("0.01"))
+ 
+    emergency_target = _calculate_emergency_fund_target(db_user, db)
+    emergency_remaining = max(Decimal("0.00"), emergency_target - db_user.emergency_fund_saved)
+    
+    if db_user.emergency_fund_saved >= emergency_target:
+        emergency_status = "Fully Funded"
+    elif db_user.emergency_fund_saved >= (emergency_target * Decimal("0.70")):
+        emergency_status = "Healthy"
+    else:
+        emergency_status = "Building Buffer"
+ 
+    # --- 6. Generate Automated Smart Financial Insights ---
+    insights: list[schemas.FinancialInsight] = []
 
-    # --- 6. Build the response ---
+    # Insight 1: Savings Performance
+    if actual_savings >= plan.savings_target:
+        insights.append(schemas.FinancialInsight(
+            type="positive",
+            title="Savings Target Achieved",
+            description=f"Your monthly savings of ₹{actual_savings:,.2f} has reached your target of ₹{plan.savings_target:,.2f}."
+        ))
+    else:
+        insights.append(schemas.FinancialInsight(
+            type="warning",
+            title="Savings Gap Warning",
+            description=f"You are ₹{savings_remaining:,.2f} short of your monthly savings target of ₹{plan.savings_target:,.2f}."
+        ))
+
+    # Insight 2: Essential Needs Spending
+    if needs_spent > plan.needs_target:
+        insights.append(schemas.FinancialInsight(
+            type="warning",
+            title="Needs Budget Exceeded",
+            description=f"Essential spending is ₹{(needs_spent - plan.needs_target):,.2f} over your standard needs target."
+        ))
+    else:
+        insights.append(schemas.FinancialInsight(
+            type="positive",
+            title="Needs Budget Under Control",
+            description=f"You have ₹{(plan.needs_target - needs_spent):,.2f} remaining in your essential needs budget."
+        ))
+
+    # Insight 3: Emergency Fund Coverage
+    if db_user.emergency_fund_saved < emergency_target:
+        fund_pct = int((db_user.emergency_fund_saved / emergency_target) * 100) if emergency_target > 0 else 100
+        insights.append(schemas.FinancialInsight(
+            type="action",
+            title="Emergency Fund Progress",
+            description=f"Emergency fund is at {fund_pct}%. Add ₹{emergency_remaining:,.2f} to complete your 6-month safety net."
+        ))
+    else:
+        insights.append(schemas.FinancialInsight(
+            type="positive",
+            title="Emergency Fund Fully Funded",
+            description="Your 6-month safety reserve is 100% complete and fully secure."
+        ))
+
+    # --- 7. Build the response ---
     def _bucket(target: Decimal, spent: Decimal) -> schemas.BudgetBucketStatus:
         """Helper: produce a BudgetBucketStatus from target and spent amounts."""
         remaining = target - spent
@@ -439,15 +742,15 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
             remaining=remaining,
             is_over_budget=spent > target,
         )
-
+ 
     category_breakdown = [
         schemas.CategoryBreakdown(category=cat, total_spent=total)
         for cat, total in sorted(category_totals.items())
     ]
-
+ 
     return schemas.BudgetStatusResponse(
         user_id=user_id,
-        monthly_income=db_user.monthly_income,
+        monthly_income=user_income,
         lifestyle_tier=plan.lifestyle_tier,
         needs=_bucket(plan.needs_target, needs_spent),
         wants=_bucket(plan.wants_target, wants_spent),
@@ -455,5 +758,110 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
         actual_savings=actual_savings,
         savings_remaining=savings_remaining,
         is_savings_on_track=actual_savings >= plan.savings_target,
+        monthly_savings=monthly_savings,
+        total_savings=total_savings,
+        emergency_fund_saved=db_user.emergency_fund_saved,
+        emergency_fund_target=emergency_target,
+        emergency_fund_remaining=emergency_remaining,
+        emergency_fund_status=emergency_status,
         category_breakdown=category_breakdown,
+        insights=insights,
     )
+
+
+@app.post(
+    "/emergency-fund/{user_id}",
+    response_model=schemas.EmergencyFundResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update the user's emergency fund savings amount",
+    tags=["Budget"],
+)
+def update_emergency_fund(
+    user_id: int,
+    update: schemas.EmergencyFundUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found",
+        )
+
+    db_user.emergency_fund_saved = update.amount.quantize(Decimal("0.01"))
+    db.commit()
+    db.refresh(db_user)
+
+    emergency_target = _calculate_emergency_fund_target(db_user, db)
+    emergency_status = "Secure" if db_user.emergency_fund_saved >= emergency_target else "Building Buffer"
+
+    return schemas.EmergencyFundResponse(
+        user_id=user_id,
+        current_saved=db_user.emergency_fund_saved,
+        target_amount=emergency_target,
+        progress_pct=(
+            min(Decimal("100"), (db_user.emergency_fund_saved / emergency_target) * Decimal("100"))
+            if emergency_target > 0 else Decimal("100")
+        ).quantize(Decimal("0.01")),
+        status=emergency_status,
+    )
+
+
+@app.post(
+    "/financial-goals/{user_id}",
+    response_model=schemas.FinancialGoalResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new financial goal",
+    tags=["Goals"],
+)
+def create_financial_goal(
+    user_id: int,
+    goal_in: schemas.FinancialGoalCreate,
+    db: Session = Depends(get_db),
+):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found",
+        )
+
+    priority = getattr(goal_in, "priority", "Medium") or "Medium"
+    new_goal = models.FinancialGoal(
+        user_id=user_id,
+        goal_name=goal_in.goal_name.strip(),
+        category=goal_in.category.strip(),
+        target_amount=goal_in.target_amount.quantize(Decimal("0.01")),
+        current_saved=goal_in.current_saved.quantize(Decimal("0.01")),
+        target_date=goal_in.target_date,
+        priority=priority,
+    )
+    db.add(new_goal)
+    db.commit()
+    db.refresh(new_goal)
+
+    return _serialize_financial_goal(new_goal)
+
+
+@app.get(
+    "/financial-goals/{user_id}",
+    response_model=list[schemas.FinancialGoalResponse],
+    summary="List all financial goals for a user",
+    tags=["Goals"],
+)
+def list_financial_goals(user_id: int, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found",
+        )
+
+    goals = (
+        db.query(models.FinancialGoal)
+        .filter(models.FinancialGoal.user_id == user_id)
+        .order_by(models.FinancialGoal.target_date.asc())
+        .all()
+    )
+
+    return [_serialize_financial_goal(goal) for goal in goals]

@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from typing import Literal, Dict
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
 # Budget-tier configuration
@@ -140,7 +140,7 @@ class FinancialSummary(BaseModel):
 
 # Dynamically build a Literal type from the configured tier names so that
 # FastAPI will reject unknown tiers with a descriptive 422 Unprocessable Entity.
-LifestyleTier = Literal["standard", "aggressive", "frugal", "comfort"]
+LifestyleTier = Literal["standard", "aggressive", "frugal", "comfort", "custom"]
 
 
 class BudgetPlanCreate(BaseModel):
@@ -156,15 +156,46 @@ class BudgetPlanCreate(BaseModel):
         description=(
             "Budget allocation strategy: "
             "'standard' (50/30/20), 'aggressive' (40/20/40), "
-            "'frugal' (30/20/50), 'comfort' (50/40/10). Case-insensitive."
+            "'frugal' (30/20/50), 'comfort' (50/40/10), "
+            "or 'custom' with your own split. Case-insensitive."
         ),
+    )
+
+    custom_needs_pct: Decimal | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Custom allocation for needs, when lifestyle_tier is 'custom'",
+    )
+    custom_wants_pct: Decimal | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Custom allocation for wants, when lifestyle_tier is 'custom'",
+    )
+    custom_savings_pct: Decimal | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Custom allocation for savings, when lifestyle_tier is 'custom'",
     )
 
     @field_validator("lifestyle_tier", mode="before")
     @classmethod
     def _normalize_tier(cls, v: str) -> str:
         return v.strip().lower() if isinstance(v, str) else v
-    
+
+    @model_validator(mode="after")
+    def _validate_custom_allocation(self):
+        if self.lifestyle_tier == "custom":
+            if self.custom_needs_pct is None or self.custom_wants_pct is None or self.custom_savings_pct is None:
+                raise ValueError(
+                    "Custom tier requires custom_needs_pct, custom_wants_pct, and custom_savings_pct to be provided."
+                )
+            total = self.custom_needs_pct + self.custom_wants_pct + self.custom_savings_pct
+            if total != Decimal("100"):
+                raise ValueError("Custom allocations must sum to exactly 100%.")
+        return self
 
 
 class BudgetPlanResponse(BaseModel):
@@ -176,6 +207,9 @@ class BudgetPlanResponse(BaseModel):
     needs_target: Decimal
     wants_target: Decimal
     savings_target: Decimal
+    needs_pct: Decimal
+    wants_pct: Decimal
+    savings_pct: Decimal
 
     class Config:
         from_attributes = True
@@ -201,8 +235,26 @@ class OnboardingRequest(BaseModel):
         description=(
             "Budget allocation strategy: "
             "'standard' (50/30/20), 'aggressive' (40/20/40), "
-            "'frugal' (30/20/50), 'comfort' (50/40/10)"
+            "'frugal' (30/20/50), 'comfort' (50/40/10), or 'custom'."
         ),
+    )
+    custom_needs_pct: Decimal | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Custom allocation for needs, when lifestyle_tier is 'custom'",
+    )
+    custom_wants_pct: Decimal | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Custom allocation for wants, when lifestyle_tier is 'custom'",
+    )
+    custom_savings_pct: Decimal | None = Field(
+        None,
+        ge=0,
+        le=100,
+        description="Custom allocation for savings, when lifestyle_tier is 'custom'",
     )
 
     @field_validator("lifestyle_tier", mode="before")
@@ -210,12 +262,75 @@ class OnboardingRequest(BaseModel):
     def _normalize_tier(cls, v: str) -> str:
         return v.strip().lower() if isinstance(v, str) else v
 
+    @model_validator(mode="after")
+    def _validate_custom_allocation(self):
+        if self.lifestyle_tier == "custom":
+            if self.custom_needs_pct is None or self.custom_wants_pct is None or self.custom_savings_pct is None:
+                raise ValueError(
+                    "Custom tier requires custom_needs_pct, custom_wants_pct, and custom_savings_pct to be provided."
+                )
+            total = self.custom_needs_pct + self.custom_wants_pct + self.custom_savings_pct
+            if total != Decimal("100"):
+                raise ValueError("Custom allocations must sum to exactly 100%.")
+        return self
+
 
 class OnboardingResponse(BaseModel):
     """Response body for POST /onboarding/{user_id} — the updated user plus their new budget plan."""
 
     user: UserResponse
     budget_plan: BudgetPlanResponse
+
+
+class EmergencyFundUpdateRequest(BaseModel):
+    amount: Decimal = Field(
+        ..., 
+        ge=0,
+        description="New current emergency savings amount in INR.",
+    )
+
+
+class EmergencyFundResponse(BaseModel):
+    user_id: int
+    current_saved: Decimal
+    target_amount: Decimal
+    progress_pct: Decimal
+    status: str
+
+    class Config:
+        from_attributes = True
+
+
+class FinancialGoalCreate(BaseModel):
+    goal_name: str = Field(..., min_length=1, max_length=255, description="Friendly name for the savings goal")
+    category: str = Field(..., min_length=1, max_length=100, description="Goal category, e.g. Home, Vacation, Education")
+    target_amount: Decimal = Field(..., gt=0, max_digits=14, decimal_places=2, description="Goal target amount")
+    current_saved: Decimal = Field(..., ge=0, max_digits=14, decimal_places=2, description="Amount already saved toward the goal")
+    target_date: date = Field(..., description="Goal completion date")
+    priority: Literal["High", "Medium", "Low"] = Field("Medium", description="Goal priority level: High, Medium, Low")
+
+
+class FinancialGoalResponse(BaseModel):
+    id: int
+    user_id: int
+    goal_name: str
+    category: str
+    target_amount: Decimal
+    current_saved: Decimal
+    target_date: date
+    priority: str = "Medium"
+    monthly_target: Decimal
+    progress_pct: Decimal
+    months_remaining: int
+    days_remaining: int
+    remaining_amount: Decimal
+    estimated_completion_date: date
+    status_code: str  # "completed", "on_track", "behind", "overdue"
+    status_label: str  # "Completed", "On Track", "Behind Schedule", "Overdue"
+    horizon: str
+
+    class Config:
+        from_attributes = True
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +342,13 @@ class CategoryBreakdown(BaseModel):
 
     category: str
     total_spent: Decimal
+
+
+class FinancialInsight(BaseModel):
+    """Actionable insight observation derived from user's financial status."""
+    type: Literal["positive", "warning", "info", "action"]
+    title: str
+    description: str
 
 
 class BudgetBucketStatus(BaseModel):
@@ -241,11 +363,6 @@ class BudgetBucketStatus(BaseModel):
 class BudgetStatusResponse(BaseModel):
     """
     Full budget status for a user.
-
-    The 'needs' bucket includes any transaction whose type is 'expense' and
-    whose category is tagged as a need (by convention: 'rent', 'groceries',
-    'utilities', 'transport', 'healthcare').  Everything else is counted as
-    a 'want'.  Savings are inferred as income minus all expenses.
     """
 
     user_id: int
@@ -262,5 +379,18 @@ class BudgetStatusResponse(BaseModel):
     savings_remaining: Decimal       # savings_target - (monthly_income - actual_savings)
     is_savings_on_track: bool        # True when actual_savings >= savings_target
 
-    # Granular per-category breakdown for the front-end to render charts
+    # Monthly rollover savings metrics
+    monthly_savings: Decimal
+    total_savings: Decimal
+
+    # Emergency fund progress
+    emergency_fund_saved: Decimal
+    emergency_fund_target: Decimal
+    emergency_fund_remaining: Decimal
+    emergency_fund_status: str
+
+    # Granular per-category breakdown for front-end charts
     category_breakdown: list[CategoryBreakdown]
+
+    # Dynamic automated smart insights
+    insights: list[FinancialInsight] = []

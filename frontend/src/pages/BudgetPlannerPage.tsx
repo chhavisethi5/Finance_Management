@@ -6,8 +6,9 @@
  */
 
 import { useEffect, useState } from "react";
-import { createBudgetPlan, getBudgetPlan, getErrorMessage } from "../api";
+import { createBudgetPlan, getBudgetPlan, getErrorMessage, formatINR } from "../api";
 import { useAuth } from "../context/AuthContext";
+import { Lock, LockOpen } from "lucide-react";
 
 interface TierInfo {
   value: string;
@@ -71,6 +72,18 @@ const TIERS: TierInfo[] = [
     gradientFrom: "#a78bfa",
     gradientTo: "#7c3aed",
   },
+  {
+    value: "custom",
+    label: "Custom",
+    needs: 50,
+    wants: 30,
+    savings: 20,
+    icon: "🛠️",
+    description: "Build your own split with live sliders and save your tailored plan.",
+    accentClass: "text-[#f97316]",
+    gradientFrom: "#f97316",
+    gradientTo: "#f59e0b",
+  },
 ];
 
 function AllocationBar({
@@ -97,6 +110,8 @@ const usd = (n: number) =>
 export default function BudgetPlannerPage() {
   const { currentUser } = useAuth();
   const [selectedTier, setSelectedTier] = useState("standard");
+  const [customAllocation, setCustomAllocation] = useState({ needs: 50, wants: 30, savings: 20 });
+  const [lockedBuckets, setLockedBuckets] = useState<Record<string, boolean>>({ needs: false, wants: false, savings: false });
   const [loading, setLoading] = useState(false);
   const [loadingSavedPlan, setLoadingSavedPlan] = useState(true);
   const [success, setSuccess] = useState("");
@@ -111,7 +126,16 @@ export default function BudgetPlannerPage() {
     (async () => {
       try {
         const plan = await getBudgetPlan(currentUser.id);
-        if (!cancelled) setSelectedTier(plan.lifestyle_tier);
+        if (!cancelled) {
+          setSelectedTier(plan.lifestyle_tier);
+          if (plan.lifestyle_tier === "custom") {
+            setCustomAllocation({
+              needs: Number(plan.needs_pct),
+              wants: Number(plan.wants_pct),
+              savings: Number(plan.savings_pct),
+            });
+          }
+        }
       } catch {
         // 404 just means the user hasn't saved a plan yet — keep the "standard" default.
       } finally {
@@ -124,7 +148,86 @@ export default function BudgetPlannerPage() {
     };
   }, [currentUser]);
 
-  const activeTier = TIERS.find((t) => t.value === selectedTier)!;
+  const activeTier =
+    selectedTier === "custom"
+      ? {
+          value: "custom",
+          label: "Custom",
+          needs: customAllocation.needs,
+          wants: customAllocation.wants,
+          savings: customAllocation.savings,
+          icon: "🛠️",
+          description: "Build your own split with live sliders and save your tailored plan.",
+          accentClass: "text-[#f97316]",
+          gradientFrom: "#f97316",
+          gradientTo: "#f59e0b",
+        }
+      : TIERS.find((t) => t.value === selectedTier)!;
+
+  const updateCustomAllocation = (bucket: keyof typeof customAllocation, value: number) => {
+    const nextValue = Math.max(0, Math.min(100, Math.round(value)));
+    const otherKeys = (Object.keys(customAllocation) as Array<keyof typeof customAllocation>).filter(
+      (key) => key !== bucket,
+    );
+    const remaining = 100 - nextValue;
+
+    const next = { ...customAllocation, [bucket]: nextValue };
+
+    // Separate locked and unlocked buckets among the others
+    const locked = otherKeys.filter((k) => lockedBuckets[k]);
+    const unlocked = otherKeys.filter((k) => !lockedBuckets[k]);
+
+    if (unlocked.length === 0) {
+      // All others are locked — can't adjust, snap the dragged bucket back
+      return;
+    }
+
+    // Sum of values that are locked (must stay fixed)
+    const lockedSum = locked.reduce((sum, k) => sum + customAllocation[k], 0);
+    const availableForUnlocked = remaining - lockedSum;
+
+    if (availableForUnlocked < 0) {
+      // Not enough room — don't update
+      return;
+    }
+
+    // Distribute availableForUnlocked proportionally among unlocked buckets
+    const unlockedSum = unlocked.reduce((sum, k) => sum + customAllocation[k], 0);
+
+    if (unlockedSum <= 0) {
+      // Spread evenly
+      const share = Math.floor(availableForUnlocked / unlocked.length);
+      unlocked.forEach((k, i) => {
+        next[k] = i === unlocked.length - 1
+          ? availableForUnlocked - share * (unlocked.length - 1)
+          : share;
+      });
+    } else {
+      let distributed = 0;
+      unlocked.forEach((k, i) => {
+        if (i === unlocked.length - 1) {
+          // Last unlocked bucket absorbs rounding remainder
+          next[k] = Math.max(0, availableForUnlocked - distributed);
+        } else {
+          const share = Math.round((customAllocation[k] / unlockedSum) * availableForUnlocked);
+          next[k] = share;
+          distributed += share;
+        }
+      });
+    }
+
+    setCustomAllocation(next);
+  };
+
+  const toggleLock = (bucket: keyof typeof lockedBuckets) => {
+    // At most 1 bucket can be locked at a time to keep UX sane
+    setLockedBuckets((prev) => ({
+      needs: false,
+      wants: false,
+      savings: false,
+      [bucket]: !prev[bucket],
+    }));
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,12 +235,20 @@ export default function BudgetPlannerPage() {
     setError(""); setSuccess("");
     setLoading(true);
     try {
-      const plan = await createBudgetPlan(currentUser.id, selectedTier);
-      const income = Number(currentUser.monthly_income);
-      setSuccess(
-        `✓ Plan saved! Needs: ${usd(Number(plan.needs_target))} · Wants: ${usd(Number(plan.wants_target))} · Savings: ${usd(Number(plan.savings_target))}`
+      const plan = await createBudgetPlan(
+        currentUser.id,
+        selectedTier,
+        selectedTier === "custom"
+          ? {
+              custom_needs_pct: customAllocation.needs,
+              custom_wants_pct: customAllocation.wants,
+              custom_savings_pct: customAllocation.savings,
+            }
+          : undefined
       );
-      void income;
+      setSuccess(
+        `✓ Plan saved! Needs: ${formatINR(Number(plan.needs_target))} · Wants: ${formatINR(Number(plan.wants_target))} · Savings: ${formatINR(Number(plan.savings_target))}`
+      );
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Failed to save plan."));
     } finally {
@@ -165,12 +276,12 @@ export default function BudgetPlannerPage() {
             {TIERS.map((tier) => (
               <label
                 key={tier.value}
-                className={[
-                  "flex cursor-pointer items-center gap-4 rounded-xl border p-4 transition-all",
+                className="flex cursor-pointer items-center gap-4 rounded-xl border p-4 transition-all border-[#2d3348] bg-[#22263a] hover:border-[#3d4466]"
+                style={
                   selectedTier === tier.value
-                    ? `border-[${tier.gradientFrom}]/60 bg-[${tier.gradientFrom}]/10`
-                    : "border-[#2d3348] bg-[#22263a] hover:border-[#3d4466]",
-                ].join(" ")}
+                    ? { borderColor: `${tier.gradientFrom}99`, backgroundColor: `${tier.gradientFrom}1A` }
+                    : undefined
+                }
               >
                 <input
                   type="radio"
@@ -235,6 +346,70 @@ export default function BudgetPlannerPage() {
             </div>
             <p className="text-sm text-[#94a3b8]">{activeTier.description}</p>
           </div>
+
+          {selectedTier === "custom" && (
+            <div className="rounded-2xl border border-[#2d3348] bg-[#1e2235] p-6 shadow-card space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-widest text-[#475569]">Custom allocation editor</p>
+                <p className="text-[10px] text-[#64748b]">Total: {customAllocation.needs + customAllocation.wants + customAllocation.savings}%</p>
+              </div>
+              <AllocationBar
+                needs={customAllocation.needs}
+                wants={customAllocation.wants}
+                savings={customAllocation.savings}
+              />
+
+              {([
+                { key: "needs", label: "🏠 Needs", color: "#34d399" },
+                { key: "wants", label: "🎉 Wants", color: "#a78bfa" },
+                { key: "savings", label: "💰 Savings", color: "#4f8ef7" },
+              ] as const).map((item) => (
+                <div key={item.key} className="space-y-2">
+                  <div className="flex items-center justify-between text-sm text-[#f1f5f9]">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        title={lockedBuckets[item.key] ? `Unlock ${item.label}` : `Lock ${item.label} at ${customAllocation[item.key]}%`}
+                        onClick={() => toggleLock(item.key)}
+                        className={[
+                          "flex h-6 w-6 items-center justify-center rounded-md border transition-all",
+                          lockedBuckets[item.key]
+                            ? "border-[#4f8ef7]/60 bg-[#4f8ef7]/10 text-[#4f8ef7]"
+                            : "border-[#2d3348] bg-[#151827] text-[#475569] hover:border-[#3d4466] hover:text-[#94a3b8]",
+                        ].join(" ")}
+                      >
+                        {lockedBuckets[item.key]
+                          ? <Lock className="h-3 w-3" />
+                          : <LockOpen className="h-3 w-3" />}
+                      </button>
+                      <span>{item.label}</span>
+                      {lockedBuckets[item.key] && (
+                        <span className="rounded-full bg-[#4f8ef7]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#4f8ef7] border border-[#4f8ef7]/30">
+                          Locked
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-semibold" style={{ color: item.color }}>
+                      {customAllocation[item.key]}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={customAllocation[item.key]}
+                    disabled={lockedBuckets[item.key]}
+                    onChange={(event) => updateCustomAllocation(item.key, Number(event.target.value))}
+                    className={"w-full accent-current" + (lockedBuckets[item.key] ? " opacity-40 cursor-not-allowed" : "")}
+                    style={{ accentColor: item.color }}
+                  />
+                </div>
+              ))}
+              <p className="text-xs text-[#94a3b8]">
+                <span className="text-[#4f8ef7] font-semibold">Tip:</span> Lock any bucket to keep it fixed while the other two adjust automatically.
+              </p>
+            </div>
+          )}
 
           {/* Allocation breakdown */}
           <div className="rounded-2xl border border-[#2d3348] bg-[#1e2235] p-6 shadow-card space-y-4">

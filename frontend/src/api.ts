@@ -55,9 +55,17 @@ export const getErrorMessage = (err: unknown, fallback = "Something went wrong."
   return fallback;
 };
 
-/** Format a number as Indian Rupees, e.g. formatINR(50000) -> "₹50,000.00" */
-export const formatINR = (n: number) =>
-  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(n);
+/** Format a number into Indian Rupees using standard Indian numbering system (e.g. ₹1,56,000.00) */
+export const formatINR = (val: number | string | null | undefined, hideDecimalsIfZero = false): string => {
+  const num = typeof val === "string" ? parseFloat(val) : Number(val ?? 0);
+  if (isNaN(num)) return "₹0.00";
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: hideDecimalsIfZero && num % 1 === 0 ? 0 : 2,
+    minimumFractionDigits: hideDecimalsIfZero && num % 1 === 0 ? 0 : 2,
+  }).format(num);
+};
 
 export interface BudgetPlan {
   id: number;
@@ -66,6 +74,9 @@ export interface BudgetPlan {
   needs_target: number;
   wants_target: number;
   savings_target: number;
+  needs_pct: number;
+  wants_pct: number;
+  savings_pct: number;
 }
 
 export interface Transaction {
@@ -89,6 +100,12 @@ export interface CategoryBreakdown {
   total_spent: number;
 }
 
+export interface FinancialInsight {
+  type: "positive" | "warning" | "info" | "action";
+  title: string;
+  description: string;
+}
+
 export interface BudgetStatus {
   user_id: number;
   monthly_income: number;
@@ -99,7 +116,55 @@ export interface BudgetStatus {
   actual_savings: number;
   savings_remaining: number;
   is_savings_on_track: boolean;
+  monthly_savings: number;
+  total_savings: number;
+  emergency_fund_saved: number;
+  emergency_fund_target: number;
+  emergency_fund_remaining: number;
+  emergency_fund_status: string;
   category_breakdown: CategoryBreakdown[];
+  insights: FinancialInsight[];
+}
+
+export interface FinancialGoal {
+  id: number;
+  user_id: number;
+  goal_name: string;
+  category: string;
+  target_amount: number;
+  current_saved: number;
+  target_date: string;
+  priority: "High" | "Medium" | "Low";
+  monthly_target: number;
+  progress_pct: number;
+  months_remaining: number;
+  days_remaining: number;
+  remaining_amount: number;
+  estimated_completion_date: string;
+  status_code: "completed" | "on_track" | "behind" | "overdue";
+  status_label: string;
+  horizon: string;
+}
+
+export interface FinancialGoalCreatePayload {
+  goal_name: string;
+  category: string;
+  target_amount: number;
+  current_saved: number;
+  target_date: string;
+  priority?: "High" | "Medium" | "Low";
+}
+
+export interface EmergencyFundResponse {
+  user_id: number;
+  current_saved: number;
+  target_amount: number;
+  progress_pct: number;
+  status: string;
+}
+
+export interface EmergencyFundUpdatePayload {
+  amount: number;
 }
 
 // ─── Auth API functions ──────────────────────────────────────────────────────
@@ -121,11 +186,20 @@ export const onboardUser = (user_id: number, payload: OnboardingPayload) =>
 // ─── Domain API functions ────────────────────────────────────────────────────
 
 /** Create or replace a budget plan for a user. */
-export const createBudgetPlan = (user_id: number, lifestyle_tier: string) =>
+export const createBudgetPlan = (
+  user_id: number,
+  lifestyle_tier: string,
+  customAllocation?: {
+    custom_needs_pct: number;
+    custom_wants_pct: number;
+    custom_savings_pct: number;
+  }
+) =>
   api
     .post<BudgetPlan>("/budget-plan/", {
       user_id,
       lifestyle_tier: lifestyle_tier.trim().toLowerCase(),
+      ...customAllocation,
     })
     .then((r) => r.data);
 
@@ -146,6 +220,24 @@ export const getBudgetStatus = (user_id: number) =>
 /** Fetch a user's currently saved budget plan (404 if none exists yet). */
 export const getBudgetPlan = (user_id: number) =>
   api.get<BudgetPlan>(`/budget-plan/${user_id}`).then((r) => r.data);
+
+/** Update the user's current emergency fund amount. */
+export const updateEmergencyFund = (user_id: number, amount: number) =>
+  api
+    .post<EmergencyFundResponse>(`/emergency-fund/${user_id}`, {
+      amount,
+    })
+    .then((r) => r.data);
+
+/** Create a new financial goal for the user. */
+export const createFinancialGoal = (user_id: number, payload: FinancialGoalCreatePayload) =>
+  api
+    .post<FinancialGoal>(`/financial-goals/${user_id}`, payload)
+    .then((r) => r.data);
+
+/** Fetch every financial goal for a user. */
+export const getFinancialGoals = (user_id: number) =>
+  api.get<FinancialGoal[]>(`/financial-goals/${user_id}`).then((r) => r.data);
 
 /** Fetch every transaction ever logged for a user, newest first. */
 export const getTransactions = (user_id: number) =>
