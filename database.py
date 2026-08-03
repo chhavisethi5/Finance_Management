@@ -5,10 +5,12 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
 
-# Database connection configuration. Use DATABASE_URL from the environment if set, otherwise fall back to a local SQLite database for development and testing.
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./finance.db")
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "mysql+pymysql://root:abcd%401234@localhost:3306/finance_db",
+)
 
-connect_args = {} if not DATABASE_URL.startswith("sqlite") else {"check_same_thread": False}
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
 # Create the SQLAlchemy engine with pool configurations for reliability
 engine = create_engine(

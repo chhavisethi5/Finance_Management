@@ -1,3 +1,4 @@
+import os
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from collections import defaultdict
@@ -40,14 +41,17 @@ app = FastAPI(
 # can call this API without browser preflight failures.
 # Tighten allow_origins to specific domains before going to production.
 # ---------------------------------------------------------------------------
+_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+]
+if os.environ.get("FRONTEND_URL"):
+    _origins.append(os.environ["FRONTEND_URL"])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "*"
-    ],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],       # GET, POST, PUT, DELETE, OPTIONS …
     allow_headers=["*"],       # Content-Type, Authorization …
