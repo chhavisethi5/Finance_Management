@@ -8,15 +8,16 @@
  */
 
 import { useState } from "react";
-import { useNavigate, Navigate } from "react-router-dom";
+import { useNavigate, Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { signUp, logIn, isOnboarded } from "../api";
 
 export default function AuthPage() {
   const { currentUser, login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(searchParams.get("mode") === "signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -79,7 +80,7 @@ export default function AuthPage() {
             💼
           </div>
           <h1 className="bg-gradient-to-r from-[#4f8ef7] to-[#a78bfa] bg-clip-text text-3xl font-bold text-transparent">
-            Smart Finance
+            MoneyMap
           </h1>
           <p className="mt-2 text-sm text-[#475569]">
             Track income, expenses, and hit your financial goals.

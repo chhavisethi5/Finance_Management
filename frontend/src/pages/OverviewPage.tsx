@@ -272,7 +272,7 @@ export default function OverviewPage() {
             </span>{" "}
             👋
           </h3>
-          <p className="text-xs text-[#94a3b8] mt-0.5">Here is your financial performance overview and milestone forecast.</p>
+          <p className="text-xs text-[#94a3b8] mt-0.5">Here's your financial snapshot for today.</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -352,7 +352,7 @@ export default function OverviewPage() {
         <div className="rounded-2xl border border-[#2d3348] bg-[#1e2235] p-5 shadow-card">
           <div className="flex items-center gap-2 mb-3.5">
             <Sparkles className="h-4 w-4 text-[#4f8ef7]" />
-            <h4 className="text-sm font-bold text-[#f1f5f9]">Smart Financial Insights</h4>
+            <h4 className="text-sm font-bold text-[#f1f5f9]">MoneyMap Insights</h4>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {status.insights.map((insight, idx) => (
@@ -495,10 +495,10 @@ export default function OverviewPage() {
               </div>
               <span
                 className={`rounded-full px-2.5 py-1 text-xs font-bold border ${status.emergency_fund_status === "Fully Funded"
-                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                    : status.emergency_fund_status === "Healthy"
-                      ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                      : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                  : status.emergency_fund_status === "Healthy"
+                    ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                    : "bg-amber-500/10 text-amber-400 border-amber-500/30"
                   }`}
               >
                 {status.emergency_fund_status}

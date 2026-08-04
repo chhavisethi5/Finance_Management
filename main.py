@@ -824,7 +824,7 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
     else:
         emergency_status = "Building Buffer"
  
-    # --- 6. Generate Automated Smart Financial Insights ---
+    # --- 6. Generate Automated MoneyMap Insights ---
     insights: list[schemas.FinancialInsight] = []
 
     # Insight 1: Savings Performance

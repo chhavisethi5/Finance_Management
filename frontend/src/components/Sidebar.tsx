@@ -36,7 +36,7 @@ export default function Sidebar() {
           💼
         </div>
         <div>
-          <p className="text-sm font-bold text-[#f1f5f9] leading-tight">Smart Finance</p>
+          <p className="text-sm font-bold text-[#f1f5f9] leading-tight">MoneyMap</p>
           <p className="text-[10px] text-[#475569] font-medium tracking-wide uppercase">Dashboard</p>
         </div>
       </div>

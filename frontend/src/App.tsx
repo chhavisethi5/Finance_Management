@@ -5,6 +5,7 @@
  */
 
 import { Routes, Route, Navigate } from "react-router-dom";
+import LandingPage from "./pages/LandingPage";
 import AuthPage from "./pages/AuthPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import DashboardLayout from "./layouts/DashboardLayout";
@@ -16,6 +17,8 @@ import BudgetPlannerPage from "./pages/BudgetPlannerPage";
 export default function App() {
   return (
     <Routes>
+      {/* Public landing / marketing page */}
+      <Route path="/" element={<LandingPage />} />
       {/* Auth */}
       <Route path="/auth" element={<AuthPage />} />
 
@@ -30,8 +33,8 @@ export default function App() {
         <Route path="budget-planner" element={<BudgetPlannerPage />} />
       </Route>
 
-      {/* Catch-all → auth */}
-      <Route path="*" element={<Navigate to="/auth" replace />} />
+      {/* Catch-all → landing page */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
