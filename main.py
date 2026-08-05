@@ -811,16 +811,22 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
         .all()
     )
     actual_savings = (user_income - total_expenses).quantize(Decimal("0.01"))
-    total_savings = past_savings + (actual_savings if actual_savings > Decimal("0.00") else Decimal("0.00"))
+    liquid_assets = (
+        db_user.manual_savings_offset
+        + past_savings
+        + (actual_savings if actual_savings > Decimal("0.00") else Decimal("0.00"))
+    ).quantize(Decimal("0.01"))
  
     savings_remaining = (plan.savings_target - actual_savings).quantize(Decimal("0.01"))
+
+    # --- Emergency Fund: derived automatically from liquid_assets, no manual entry ---
  
     emergency_target = _calculate_emergency_fund_target(db_user, db)
-    emergency_remaining = max(Decimal("0.00"), emergency_target - db_user.emergency_fund_saved)
-    
-    if db_user.emergency_fund_saved >= emergency_target:
+    emergency_remaining = max(Decimal("0.00"), emergency_target - liquid_assets)
+
+    if liquid_assets >= emergency_target:
         emergency_status = "Fully Funded"
-    elif db_user.emergency_fund_saved >= (emergency_target * Decimal("0.70")):
+    elif liquid_assets >= (emergency_target * Decimal("0.70")):
         emergency_status = "Healthy"
     else:
         emergency_status = "Building Buffer"
@@ -856,19 +862,19 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
             description=f"You have ₹{(plan.needs_target - needs_spent):,.2f} remaining in your essential needs budget."
         ))
 
-    # Insight 3: Emergency Fund Coverage
-    if db_user.emergency_fund_saved < emergency_target:
-        fund_pct = int((db_user.emergency_fund_saved / emergency_target) * 100) if emergency_target > 0 else 100
+    # Insight 3: Emergency Fund Coverage (derived automatically from liquid_assets)
+    if liquid_assets < emergency_target:
+        fund_pct = int((liquid_assets / emergency_target) * 100) if emergency_target > 0 else 100
         insights.append(schemas.FinancialInsight(
             type="action",
             title="Emergency Fund Progress",
-            description=f"Emergency fund is at {fund_pct}%. Add ₹{emergency_remaining:,.2f} to complete your 6-month safety net."
+            description=f"Your savings cover {fund_pct}% of your 6-month safety net. Save ₹{emergency_remaining:,.2f} more to complete it."
         ))
     else:
         insights.append(schemas.FinancialInsight(
             type="positive",
             title="Emergency Fund Fully Funded",
-            description="Your 6-month safety reserve is 100% complete and fully secure."
+            description="Your savings already cover your full 6-month safety reserve."
         ))
 
     # --- 7. Build the response ---
@@ -898,8 +904,9 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
         savings_remaining=savings_remaining,
         is_savings_on_track=actual_savings >= plan.savings_target,
         monthly_savings=monthly_savings,
-        total_savings=total_savings,
-        emergency_fund_saved=db_user.emergency_fund_saved,
+        liquid_assets=liquid_assets,
+        manual_savings_offset=db_user.manual_savings_offset,
+        emergency_fund_saved=liquid_assets,
         emergency_fund_target=emergency_target,
         emergency_fund_remaining=emergency_remaining,
         emergency_fund_status=emergency_status,
@@ -908,18 +915,25 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
     )
 
 
-@app.post(
-    "/emergency-fund/{user_id}",
-    response_model=schemas.EmergencyFundResponse,
+@app.put(
+    "/user/{user_id}/savings",
+    response_model=schemas.UserResponse,
     status_code=status.HTTP_200_OK,
-    summary="Update the user's emergency fund savings amount",
-    tags=["Budget"],
+    summary="Manually set the user's pre-existing (pre-MoneyMap) savings",
+    tags=["User"],
 )
-def update_emergency_fund(
+def update_manual_savings(
     user_id: int,
-    update: schemas.EmergencyFundUpdateRequest,
+    update: schemas.UserSavingsUpdateRequest,
     db: Session = Depends(get_db),
 ):
+    """
+    Lets a user record lifetime savings they already had before joining
+    MoneyMap (e.g. money sitting in a bank account). This value is folded
+    into liquid_assets on every /budget-status call, which in turn is what
+    the automated Emergency Fund calculation compares against its 6-month
+    target — there is no separate manual emergency-fund entry anymore.
+    """
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not db_user:
         raise HTTPException(
@@ -927,23 +941,11 @@ def update_emergency_fund(
             detail=f"User with ID {user_id} not found",
         )
 
-    db_user.emergency_fund_saved = update.amount.quantize(Decimal("0.01"))
+    db_user.manual_savings_offset = update.manual_savings_offset.quantize(Decimal("0.01"))
     db.commit()
     db.refresh(db_user)
 
-    emergency_target = _calculate_emergency_fund_target(db_user, db)
-    emergency_status = "Secure" if db_user.emergency_fund_saved >= emergency_target else "Building Buffer"
-
-    return schemas.EmergencyFundResponse(
-        user_id=user_id,
-        current_saved=db_user.emergency_fund_saved,
-        target_amount=emergency_target,
-        progress_pct=(
-            min(Decimal("100"), (db_user.emergency_fund_saved / emergency_target) * Decimal("100"))
-            if emergency_target > 0 else Decimal("100")
-        ).quantize(Decimal("0.01")),
-        status=emergency_status,
-    )
+    return db_user
 
 
 @app.post(

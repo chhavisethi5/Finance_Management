@@ -21,6 +21,7 @@ export interface User {
   email: string;
   name: string | null;
   monthly_income: number | null;
+  manual_savings_offset: number;
 }
 
 /** True once the user has completed the onboarding step. */
@@ -127,7 +128,8 @@ export interface BudgetStatus {
   savings_remaining: number;
   is_savings_on_track: boolean;
   monthly_savings: number;
-  total_savings: number;
+  liquid_assets: number;
+  manual_savings_offset: number;
   emergency_fund_saved: number;
   emergency_fund_target: number;
   emergency_fund_remaining: number;
@@ -175,17 +177,11 @@ export interface FinancialGoalUpdatePayload {
   priority?: "High" | "Medium" | "Low";
 }
 
-export interface EmergencyFundResponse {
-  user_id: number;
-  current_saved: number;
-  target_amount: number;
-  progress_pct: number;
-  status: string;
+export interface UserSavingsUpdatePayload {
+  manual_savings_offset: number;
 }
 
-export interface EmergencyFundUpdatePayload {
-  amount: number;
-}
+
 
 // ─── Auth API functions ──────────────────────────────────────────────────────
 
@@ -250,12 +246,10 @@ export const getBudgetStatus = (user_id: number) =>
 export const getBudgetPlan = (user_id: number) =>
   api.get<BudgetPlan>(`/budget-plan/${user_id}`).then((r) => r.data);
 
-/** Update the user's current emergency fund amount. */
-export const updateEmergencyFund = (user_id: number, amount: number) =>
+/** Manually set the user's pre-existing (pre-MoneyMap) savings. Folded into liquid_assets and, in turn, the automated Emergency Fund calculation. */
+export const updateSavingsOffset = (user_id: number, manual_savings_offset: number) =>
   api
-    .post<EmergencyFundResponse>(`/emergency-fund/${user_id}`, {
-      amount,
-    })
+    .put<User>(`/user/${user_id}/savings`, { manual_savings_offset })
     .then((r) => r.data);
 
 /** Create a new financial goal for the user. */

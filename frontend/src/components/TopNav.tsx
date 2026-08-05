@@ -4,6 +4,7 @@
 
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { Menu } from "lucide-react";
 
 const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/dashboard": { title: "Overview", subtitle: "Your financial snapshot" },
@@ -11,7 +12,11 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/dashboard/budget-planner": { title: "Budget Planner", subtitle: "Configure your lifestyle tier" },
 };
 
-export default function TopNav() {
+interface TopNavProps {
+  onOpenMobileSidebar: () => void;
+}
+
+export default function TopNav({ onOpenMobileSidebar }: TopNavProps) {
   const { pathname } = useLocation();
   const { currentUser } = useAuth();
   const page = PAGE_TITLES[pathname] ?? { title: "Dashboard", subtitle: "" };
@@ -23,11 +28,20 @@ export default function TopNav() {
   });
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#2d3348] bg-[#0f1117]/80 px-6 backdrop-blur-md">
-      {/* ── Page Title ── */}
-      <div>
-        <h2 className="text-base font-bold text-[#f1f5f9] leading-tight">{page.title}</h2>
-        <p className="text-xs text-[#475569]">{page.subtitle}</p>
+    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#2d3348] bg-[#0f1117]/80 px-4 sm:px-6 backdrop-blur-md">
+      {/* ── Mobile menu button + Page Title ── */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onOpenMobileSidebar}
+          aria-label="Open sidebar"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-[#94a3b8] hover:bg-[#1a1d27] hover:text-[#f1f5f9] transition-colors lg:hidden"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+        <div>
+          <h2 className="text-base font-bold text-[#f1f5f9] leading-tight">{page.title}</h2>
+          <p className="text-xs text-[#475569]">{page.subtitle}</p>
+        </div>
       </div>
 
       {/* ── Right: date + user badge ── */}

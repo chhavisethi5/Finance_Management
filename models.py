@@ -21,7 +21,16 @@ class User(Base):
     monthly_income = Column(Numeric(10, 2), nullable=True)
 
     # Emergency savings tracker for the user's cash reserve.
+    # NOTE: retained for backward compatibility with existing rows, but no
+    # longer written to or read by the API — emergency fund status is now
+    # derived automatically from total_savings (see /budget-status).
     emergency_fund_saved = Column(Numeric(14, 2), nullable=False, default=0)
+
+    # Pre-existing / lifetime savings the user had *before* they started
+    # using MoneyMap. Manually set by the user in Settings and folded into
+    # their cumulative total_savings figure alongside in-app rollover savings.
+    manual_savings_offset = Column(Numeric(14, 2), nullable=False, default=0)
+
     onboarded_at = Column(Date, nullable=True)
 
     # Relationship to transactions with cascade deletes to maintain database integrity

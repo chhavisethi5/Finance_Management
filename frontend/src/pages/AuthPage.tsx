@@ -74,6 +74,17 @@ export default function AuthPage() {
       </div>
 
       <div className="relative w-full max-w-md">
+        {/* ── Back to Home ── */}
+        <button
+          type="button"
+          onClick={() => navigate("/")}
+          className="absolute -top-12 left-0 flex items-center gap-1.5 text-sm font-medium text-[#94a3b8] hover:text-[#f1f5f9] transition-colors"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Back to Home
+        </button>
         {/* ── Logo / Brand ── */}
         <div className="mb-8 text-center">
           <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#4f8ef7] to-[#6c63ff] text-3xl shadow-2xl shadow-[#4f8ef7]/40">

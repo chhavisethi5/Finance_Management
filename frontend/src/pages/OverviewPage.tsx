@@ -11,7 +11,7 @@ import {
   getBudgetStatus,
   getFinancialGoals,
   createFinancialGoal,
-  updateEmergencyFund,
+  updateSavingsOffset,
   formatINR,
   getErrorMessage,
 } from "../api";
@@ -33,6 +33,7 @@ import {
   PieChart as PieChartIcon,
   BarChart3,
   Pencil,
+  Landmark,
 } from "lucide-react";
 import EditGoalModal from "../components/EditGoalModal";
 import {
@@ -83,7 +84,7 @@ function StatCard({ label, value, sub, icon, accent = "text-[#f1f5f9]", badge }:
 const PIE_COLORS = ["#34d399", "#a78bfa", "#4f8ef7", "#fbbf24", "#f87171", "#38bdf8", "#f97316"];
 
 export default function OverviewPage() {
-  const { currentUser } = useAuth();
+  const { currentUser, login } = useAuth();
   const [status, setStatus] = useState<BudgetStatus | null>(null);
   const [goals, setGoals] = useState<FinancialGoal[]>([]);
   const [loading, setLoading] = useState(false);
@@ -102,10 +103,12 @@ export default function OverviewPage() {
   const [goalDate, setGoalDate] = useState("");
   const [editingGoal, setEditingGoal] = useState<FinancialGoal | null>(null);
 
-  // Emergency Fund State
-  const [emergencyInput, setEmergencyInput] = useState("");
-  const [updatingEmergency, setUpdatingEmergency] = useState(false);
-  const [emergencySuccess, setEmergencySuccess] = useState("");
+  // Initial Savings (pre-MoneyMap) State — feeds Liquid Assets & the
+  // automated Emergency Fund calculation. Replaces the old manual
+  // "add to emergency fund" form.
+  const [savingsOffsetInput, setSavingsOffsetInput] = useState("");
+  const [updatingSavingsOffset, setUpdatingSavingsOffset] = useState(false);
+  const [savingsOffsetSuccess, setSavingsOffsetSuccess] = useState("");
 
   const fetchStatus = useCallback(async () => {
     if (!currentUser) return;
@@ -114,7 +117,7 @@ export default function OverviewPage() {
     try {
       const data = await getBudgetStatus(currentUser.id);
       setStatus(data);
-      setEmergencyInput(String(data.emergency_fund_saved ?? ""));
+      setSavingsOffsetInput(String(data.manual_savings_offset ?? "0"));
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Could not load budget status."));
     } finally {
@@ -140,21 +143,22 @@ export default function OverviewPage() {
     void fetchGoals();
   }, [fetchStatus, fetchGoals]);
 
-  const handleEmergencySave = async (e: React.FormEvent) => {
+  const handleSavingsOffsetSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || emergencyInput.trim() === "") return;
+    if (!currentUser || savingsOffsetInput.trim() === "") return;
     setError("");
-    setEmergencySuccess("");
-    setUpdatingEmergency(true);
+    setSavingsOffsetSuccess("");
+    setUpdatingSavingsOffset(true);
 
     try {
-      await updateEmergencyFund(currentUser.id, Number(emergencyInput));
-      setEmergencySuccess("Emergency savings updated successfully!");
+      const updatedUser = await updateSavingsOffset(currentUser.id, Number(savingsOffsetInput));
+      login(updatedUser); // keep AuthContext / localStorage in sync
+      setSavingsOffsetSuccess("Initial savings updated successfully!");
       await fetchStatus();
     } catch (err: unknown) {
-      setError(getErrorMessage(err, "Could not update emergency fund."));
+      setError(getErrorMessage(err, "Could not update your initial savings."));
     } finally {
-      setUpdatingEmergency(false);
+      setUpdatingSavingsOffset(false);
     }
   };
 
@@ -325,9 +329,9 @@ export default function OverviewPage() {
             accent={status.monthly_savings >= 0 ? "text-emerald-400" : "text-rose-400"}
           />
           <StatCard
-            label="Total Savings"
-            value={formatINR(status.total_savings)}
-            sub="Cumulative lifetime total"
+            label="Liquid Assets"
+            value={formatINR(status.liquid_assets)}
+            sub={`Incl. ${formatINR(status.manual_savings_offset, true)} initial`}
             icon={<PiggyBank className="h-4 w-4 text-blue-400" />}
             badge="Rollover"
           />
@@ -519,31 +523,69 @@ export default function OverviewPage() {
               mode="saved"
             />
 
-            {emergencySuccess && (
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-400">
-                {emergencySuccess}
-              </div>
-            )}
-
-            <form onSubmit={handleEmergencySave} className="flex gap-2">
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="New saved amount (₹)"
-                value={emergencyInput}
-                onChange={(e) => setEmergencyInput(e.target.value)}
-                className="flex-1 rounded-xl border border-[#2d3348] bg-[#151827] px-3 py-2 text-xs text-[#f1f5f9] outline-none focus:border-[#4f8ef7]"
-              />
-              <button
-                type="submit"
-                disabled={updatingEmergency}
-                className="rounded-xl bg-[#4f8ef7] px-4 py-2 text-xs font-semibold text-white hover:bg-[#3b82f6] transition-all disabled:opacity-50"
-              >
-                {updatingEmergency ? "Updating…" : "Update Fund"}
-              </button>
-            </form>
+            <p className="text-xs leading-relaxed text-[#64748b]">
+              {status.emergency_fund_saved >= status.emergency_fund_target ? (
+                <>
+                  Your <span className="font-semibold text-[#f1f5f9]">Liquid Assets</span> of{" "}
+                  {formatINR(status.emergency_fund_saved)} fully cover your 6-month buffer target of{" "}
+                  {formatINR(status.emergency_fund_target)}.
+                </>
+              ) : (
+                <>
+                  Calculated automatically from your{" "}
+                  <span className="font-semibold text-[#f1f5f9]">Liquid Assets</span>. You need{" "}
+                  {formatINR(status.emergency_fund_target - status.emergency_fund_saved)} more to
+                  reach your 6-month buffer target of {formatINR(status.emergency_fund_target)}.
+                </>
+              )}
+            </p>
           </div>
+        </div>
+      )}
+
+      {/* ── 4b. Initial Savings (pre-MoneyMap) — feeds Liquid Assets & Emergency Fund ── */}
+      {status && (
+        <div className="rounded-2xl border border-[#2d3348] bg-[#1e2235] p-5 shadow-card space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#252a3e] text-[#4f8ef7]">
+              <Landmark className="h-4 w-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">
+                Initial Savings
+              </h4>
+              <p className="mt-0.5 text-xs text-[#64748b]">
+                Had savings before joining MoneyMap? Add them here — they're included in your Total
+                Savings and Emergency Fund automatically, alongside your in-app rollover savings.
+              </p>
+            </div>
+          </div>
+
+          {savingsOffsetSuccess && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-400">
+              {savingsOffsetSuccess}
+            </div>
+          )}
+
+          <form onSubmit={handleSavingsOffsetSave} className="flex gap-2">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Pre-existing savings (₹)"
+              value={savingsOffsetInput}
+              onChange={(e) => setSavingsOffsetInput(e.target.value)}
+              className="flex-1 rounded-xl border border-[#2d3348] bg-[#151827] px-3 py-2 text-xs text-[#f1f5f9] outline-none focus:border-[#4f8ef7]"
+            />
+            <button
+              type="submit"
+              disabled={updatingSavingsOffset}
+              className="flex items-center gap-1.5 rounded-xl bg-[#4f8ef7] px-4 py-2 text-xs font-semibold text-white hover:bg-[#3b82f6] transition-all disabled:opacity-50"
+            >
+              <Pencil className="h-3 w-3" />
+              {updatingSavingsOffset ? "Saving…" : "Save"}
+            </button>
+          </form>
         </div>
       )}
 

@@ -81,9 +81,27 @@ class UserResponse(BaseModel):
     email: str
     name: str | None = None
     monthly_income: Decimal | None = None
+    manual_savings_offset: Decimal = Decimal("0.00")
 
     class Config:
         from_attributes = True
+
+    class UserSavingsUpdateRequest(BaseModel):
+        """
+        Request body for PUT /user/{user_id}/savings.
+
+        Lets a user manually set the lifetime savings they had *before* they
+        started using MoneyMap (e.g. money already sitting in a bank account).
+        This is a full replace, not a delta — the client sends the new total.
+        """
+
+        manual_savings_offset: Decimal = Field(
+            ...,
+            ge=0,
+            max_digits=14,
+            decimal_places=2,
+            description="Total pre-existing savings from before using MoneyMap, in INR.",
+        )
 
 
 # -------------------------
@@ -304,25 +322,6 @@ class OnboardingResponse(BaseModel):
     budget_plan: BudgetPlanResponse
 
 
-class EmergencyFundUpdateRequest(BaseModel):
-    amount: Decimal = Field(
-        ..., 
-        ge=0,
-        description="New current emergency savings amount in INR.",
-    )
-
-
-class EmergencyFundResponse(BaseModel):
-    user_id: int
-    current_saved: Decimal
-    target_amount: Decimal
-    progress_pct: Decimal
-    status: str
-
-    class Config:
-        from_attributes = True
-
-
 class FinancialGoalCreate(BaseModel):
     goal_name: str = Field(..., min_length=1, max_length=255, description="Friendly name for the savings goal")
     category: str = Field(..., min_length=1, max_length=100, description="Goal category, e.g. Home, Vacation, Education")
@@ -420,9 +419,12 @@ class BudgetStatusResponse(BaseModel):
 
     # Monthly rollover savings metrics
     monthly_savings: Decimal
-    total_savings: Decimal
+    liquid_assets: Decimal
+    manual_savings_offset: Decimal  # Pre-MoneyMap savings the user manually entered
 
-    # Emergency fund progress
+    # Emergency fund progress — derived automatically from liquid_assets,
+    # compared against a 6-month Needs-based safety-net target. There is no
+    # separate manually-tracked emergency balance anymore.
     emergency_fund_saved: Decimal
     emergency_fund_target: Decimal
     emergency_fund_remaining: Decimal
