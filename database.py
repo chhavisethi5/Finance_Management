@@ -10,8 +10,11 @@ DATABASE_URL = os.environ.get(
     "mysql+pymysql://root:abcd%401234@localhost:3306/finance_db",
 )
 
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+else:
+    connect_args = {"ssl": {}}
+    
 # Create the SQLAlchemy engine with pool configurations for reliability
 engine = create_engine(
     DATABASE_URL,
