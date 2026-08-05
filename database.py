@@ -1,3 +1,4 @@
+import ssl
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
@@ -10,27 +11,28 @@ DATABASE_URL = os.environ.get(
     "mysql+pymysql://root:abcd%401234@localhost:3306/finance_db",
 )
 
+# Create a secure SSL context for Aiven MySQL
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
+
 if DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 else:
-    connect_args = {"ssl": {}}
-    
-# Create the SQLAlchemy engine with pool configurations for reliability
+    connect_args = {"ssl": ssl_context}
+
+# Create the SQLAlchemy engine
 engine = create_engine(
     DATABASE_URL,
     connect_args=connect_args,
-    pool_pre_ping=True,       # Enable connection health checks on checkout
-    pool_recycle=3600,        # Recycle connections after 1 hour to avoid timeouts
-    echo=False,               # Set to True if database query logging is needed
+    pool_pre_ping=True,
+    pool_recycle=3600,
+    echo=False,
 )
 
-# Create a local session class bound to our engine
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Base class for declarative database models
 Base = declarative_base()
 
-# FastAPI dependency function to yield database sessions per request
 def get_db():
     db = SessionLocal()
     try:
