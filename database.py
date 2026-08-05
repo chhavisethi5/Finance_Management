@@ -30,6 +30,14 @@ engine = create_engine(
     echo=False,
 )
 
+from sqlalchemy import text
+
+with engine.connect() as conn:
+    print("DATABASE:", conn.execute(text("SELECT DATABASE()")).scalar())
+    print("COLUMNS:")
+    for row in conn.execute(text("SHOW COLUMNS FROM users")):
+        print(row)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
