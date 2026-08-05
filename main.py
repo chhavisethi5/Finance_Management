@@ -281,6 +281,9 @@ def get_financial_summary(user_id: int, db: Session = Depends(get_db)):
             detail=f"User with ID {user_id} not found"
         )
     
+    # Catch up on any recurring/fixed expenses that are now due before summing.
+    _process_due_recurring_expenses(db_user, db)
+
     # Retrieve all transactions for the user
     transactions = db.query(models.Transaction).filter(models.Transaction.user_id == user_id).all()
     
@@ -410,7 +413,21 @@ def _refresh_monthly_savings_snapshots(db_user: models.User, db: Session) -> Non
             )
             .all()
         )
-        savings_amount = (db_user.monthly_income - expenses).quantize(Decimal("0.01"))
+        # Any extra Income transactions logged in-app (on top of the user's
+        # base monthly_income) flow straight into that month's savings and,
+        # in turn, Liquid Assets.
+        extra_income = sum(
+            txn.amount
+            for txn in db.query(models.Transaction)
+            .filter(
+                models.Transaction.user_id == db_user.id,
+                models.Transaction.type == "income",
+                models.Transaction.transaction_date >= month_start,
+                models.Transaction.transaction_date < month_end,
+            )
+            .all()
+        )
+        savings_amount = (db_user.monthly_income + extra_income - expenses).quantize(Decimal("0.01"))
         db.add(
             models.MonthlySavings(
                 user_id=db_user.id,
@@ -465,9 +482,216 @@ def _resync_monthly_savings_snapshot(db_user: models.User, year_month: str, db: 
         )
         .all()
     )
-    row.savings_amount = (db_user.monthly_income - expenses).quantize(Decimal("0.01"))
+    extra_income = sum(
+        txn.amount
+        for txn in db.query(models.Transaction)
+        .filter(
+            models.Transaction.user_id == db_user.id,
+            models.Transaction.type == "income",
+            models.Transaction.transaction_date >= month_start,
+            models.Transaction.transaction_date < month_end,
+        )
+        .all()
+    )
+    row.savings_amount = (db_user.monthly_income + extra_income - expenses).quantize(Decimal("0.01"))
     db.commit()
 
+# ===========================================================================
+# Recurring / Fixed Expenses
+# ===========================================================================
+
+def _advance_deduction_date(current: date, frequency: str) -> date:
+    """Push a recurring expense's next_deduction_date forward by one cycle."""
+    months_to_add = 1 if frequency == "monthly" else 3
+    month_index = current.month - 1 + months_to_add
+    year = current.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(current.day, 28)  # deduction_day is always <= 28, so this is exact
+    return date(year, month, day)
+
+
+def _process_due_recurring_expenses(db_user: models.User, db: Session) -> bool:
+    """
+    Auto-generate expense transactions for any active recurring expense whose
+    `next_deduction_date` has arrived (today or earlier), then roll each one
+    forward to its next occurrence. Runs lazily whenever budget-status or the
+    financial summary is requested, rather than needing a background worker.
+
+    The generated transaction is a normal 'expense' row, so it's automatically
+    picked up by the existing Needs/Wants + Monthly Savings + Liquid Assets
+    calculations — a monthly item reduces that month's savings, a quarterly
+    item reduces whichever month it lands in, and both roll into cumulative
+    Liquid Assets exactly like any other logged expense.
+
+    Returns True if at least one deduction was made (so callers know to
+    re-read any already-fetched transaction lists).
+    """
+    today = date.today()
+    due_items = (
+        db.query(models.RecurringExpense)
+        .filter(
+            models.RecurringExpense.user_id == db_user.id,
+            models.RecurringExpense.is_active.is_(True),
+            models.RecurringExpense.next_deduction_date <= today,
+        )
+        .all()
+    )
+    if not due_items:
+        return False
+
+    touched_months: set[str] = set()
+    for item in due_items:
+        # An expense can be "overdue" by more than one cycle (e.g. the user
+        # hasn't opened the app in a while) — catch up fully, one cycle at a
+        # time, rather than only firing once.
+        while item.next_deduction_date <= today:
+            db.add(
+                models.Transaction(
+                    user_id=db_user.id,
+                    amount=item.amount,
+                    category=item.category,
+                    type="expense",
+                    transaction_date=item.next_deduction_date,
+                    comment=(item.comment.strip() if item.comment else None) or f"Auto-deducted: {item.title}",
+                )
+            )
+            touched_months.add(_month_key(_first_of_month(item.next_deduction_date)))
+            item.next_deduction_date = _advance_deduction_date(item.next_deduction_date, item.frequency)
+
+    db.commit()
+
+    # Any month we just backfilled that already has a finalized snapshot
+    # needs to be recalculated so historical rollups stay accurate.
+    for year_month in touched_months:
+        _resync_monthly_savings_snapshot(db_user, year_month, db)
+
+    return True
+
+
+def _next_occurrence_of_day(day: int, start: date) -> date:
+    """First calendar date >= start whose day-of-month equals `day`."""
+    candidate = date(start.year, start.month, day)
+    if candidate < start:
+        candidate = _advance_deduction_date(candidate, "monthly")
+    return candidate
+
+
+def _serialize_recurring_expense(item: models.RecurringExpense) -> schemas.RecurringExpenseResponse:
+    return schemas.RecurringExpenseResponse(
+        id=item.id,
+        user_id=item.user_id,
+        title=item.title,
+        amount=item.amount,
+        category=item.category,
+        frequency=item.frequency,
+        deduction_day=item.deduction_day,
+        next_deduction_date=item.next_deduction_date,
+        comment=item.comment,
+        is_active=item.is_active,
+    )
+
+
+@app.post(
+    "/recurring-expenses/",
+    response_model=schemas.RecurringExpenseResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a recurring/fixed expense",
+    tags=["Recurring Expenses"],
+)
+def create_recurring_expense(payload: schemas.RecurringExpenseCreate, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.id == payload.user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with ID {payload.user_id} not found")
+
+    start = payload.start_date or date.today()
+    next_date = _next_occurrence_of_day(payload.deduction_day, start)
+
+    item = models.RecurringExpense(
+        user_id=payload.user_id,
+        title=payload.title.strip(),
+        amount=payload.amount,
+        category=payload.category,
+        frequency=payload.frequency,
+        deduction_day=payload.deduction_day,
+        next_deduction_date=next_date,
+        comment=payload.comment.strip() if payload.comment else None,
+        is_active=True,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _serialize_recurring_expense(item)
+
+
+@app.get(
+    "/recurring-expenses/{user_id}",
+    response_model=list[schemas.RecurringExpenseResponse],
+    summary="List a user's recurring/fixed expenses",
+    tags=["Recurring Expenses"],
+)
+def list_recurring_expenses(user_id: int, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with ID {user_id} not found")
+
+    # Catch up on anything due before returning the list, so the UI always
+    # shows accurate "next deduction" dates.
+    _process_due_recurring_expenses(db_user, db)
+
+    items = (
+        db.query(models.RecurringExpense)
+        .filter(models.RecurringExpense.user_id == user_id)
+        .order_by(models.RecurringExpense.next_deduction_date.asc())
+        .all()
+    )
+    return [_serialize_recurring_expense(i) for i in items]
+
+
+@app.put(
+    "/recurring-expenses/{expense_id}",
+    response_model=schemas.RecurringExpenseResponse,
+    summary="Update a recurring/fixed expense",
+    tags=["Recurring Expenses"],
+)
+def update_recurring_expense(expense_id: int, update: schemas.RecurringExpenseUpdate, db: Session = Depends(get_db)):
+    item = db.query(models.RecurringExpense).filter(models.RecurringExpense.id == expense_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Recurring expense {expense_id} not found")
+
+    update_data = update.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided to update.")
+
+    if "title" in update_data and update_data["title"] is not None:
+        update_data["title"] = update_data["title"].strip()
+    if "comment" in update_data and update_data["comment"] is not None:
+        update_data["comment"] = update_data["comment"].strip() or None
+
+    # If the schedule itself changed, recompute next_deduction_date from today.
+    reschedule = "deduction_day" in update_data or "frequency" in update_data
+    for field, value in update_data.items():
+        setattr(item, field, value)
+    if reschedule:
+        item.next_deduction_date = _next_occurrence_of_day(item.deduction_day, date.today())
+
+    db.commit()
+    db.refresh(item)
+    return _serialize_recurring_expense(item)
+
+
+@app.delete(
+    "/recurring-expenses/{expense_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a recurring/fixed expense",
+    tags=["Recurring Expenses"],
+)
+def delete_recurring_expense(expense_id: int, db: Session = Depends(get_db)):
+    item = db.query(models.RecurringExpense).filter(models.RecurringExpense.id == expense_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Recurring expense {expense_id} not found")
+    db.delete(item)
+    db.commit()
+    return None
 
 def _serialize_financial_goal(goal: models.FinancialGoal) -> schemas.FinancialGoalResponse:
     today = date.today()
@@ -776,6 +1000,34 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
         )
         .all()
     )
+
+    # --- 3b. Auto-generate any recurring/fixed expenses that are now due,
+    # then re-pull this month's expenses so they're reflected below. ---
+    if _process_due_recurring_expenses(db_user, db):
+        expenses = (
+            db.query(models.Transaction)
+            .filter(
+                models.Transaction.user_id == user_id,
+                models.Transaction.type == "expense",
+                models.Transaction.transaction_date >= current_month,
+                models.Transaction.transaction_date < _next_month(current_month),
+            )
+            .all()
+        )
+
+    # Extra Income transactions logged this month (on top of base monthly_income)
+    # — these flow straight into this month's savings and Liquid Assets.
+    extra_income_this_month = sum(
+        txn.amount
+        for txn in db.query(models.Transaction)
+        .filter(
+            models.Transaction.user_id == user_id,
+            models.Transaction.type == "income",
+            models.Transaction.transaction_date >= current_month,
+            models.Transaction.transaction_date < _next_month(current_month),
+        )
+        .all()
+    )
  
     # --- 4. Aggregate spend per category and bucket ---
     category_totals: dict[str, Decimal] = defaultdict(Decimal)
@@ -799,7 +1051,7 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
     current_month_expenses = total_expenses
 
     user_income = db_user.monthly_income or Decimal("0.00")
-    monthly_savings = (user_income - current_month_expenses).quantize(Decimal("0.01"))
+    monthly_savings = (user_income + extra_income_this_month - current_month_expenses).quantize(Decimal("0.01"))
     
     past_savings = sum(
         row.savings_amount
@@ -810,7 +1062,7 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
         )
         .all()
     )
-    actual_savings = (user_income - total_expenses).quantize(Decimal("0.01"))
+    actual_savings = (user_income + extra_income_this_month - total_expenses).quantize(Decimal("0.01"))
     liquid_assets = (
         db_user.manual_savings_offset
         + past_savings

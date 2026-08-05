@@ -11,18 +11,17 @@ import {
   getBudgetStatus,
   getFinancialGoals,
   createFinancialGoal,
-  updateSavingsOffset,
+  getRecurringExpenses,
   formatINR,
   getErrorMessage,
 } from "../api";
-import type { BudgetStatus, FinancialGoal } from "../api";
+import type { BudgetStatus, FinancialGoal, RecurringExpense, User } from "../api";
 import { useAuth } from "../context/AuthContext";
 import ProgressBar from "../components/ProgressBar";
 import {
   Wallet,
   PiggyBank,
   Target,
-  ShieldCheck,
   RefreshCw,
   AlertCircle,
   CheckCircle2,
@@ -33,9 +32,11 @@ import {
   PieChart as PieChartIcon,
   BarChart3,
   Pencil,
-  Landmark,
+  Repeat,
 } from "lucide-react";
 import EditGoalModal from "../components/EditGoalModal";
+import InitialSavingsModal from "../components/InitialSavingsModal";
+import RecurringExpensesModal from "../components/RecurringExpensesModal";
 import {
   ResponsiveContainer,
   BarChart,
@@ -57,20 +58,42 @@ interface StatCardProps {
   icon: React.ReactNode;
   accent?: string;
   badge?: string;
+  /** Optional sleek edit affordance rendered in the top-right corner, with a hover tooltip. */
+  onEdit?: () => void;
+  editTooltip?: string;
 }
 
-function StatCard({ label, value, sub, icon, accent = "text-[#f1f5f9]", badge }: StatCardProps) {
+function StatCard({ label, value, sub, icon, accent = "text-[#f1f5f9]", badge, onEdit, editTooltip }: StatCardProps) {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-[#2d3348] bg-[#1e2235] p-4 shadow-card hover:border-[#3d4466] transition-all">
+    <div className="group relative overflow-hidden rounded-xl border border-[#2d3348] bg-[#1e2235] p-4 shadow-card hover:border-[#3d4466] transition-all">
       <div className="flex items-start justify-between">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#252a3e] text-[#4f8ef7]">
           {icon}
         </div>
-        {badge && (
-          <span className="rounded-full bg-[#4f8ef7]/10 px-2 py-0.5 text-[10px] font-bold text-[#4f8ef7] border border-[#4f8ef7]/20">
-            {badge}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {badge && (
+            <span className="rounded-full bg-[#4f8ef7]/10 px-2 py-0.5 text-[10px] font-bold text-[#4f8ef7] border border-[#4f8ef7]/20">
+              {badge}
+            </span>
+          )}
+          {onEdit && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={onEdit}
+                aria-label={editTooltip ?? "Edit"}
+                className="peer flex h-6 w-6 items-center justify-center rounded-md text-[#64748b] opacity-0 transition-all duration-150 hover:bg-white/[0.06] hover:text-[#4f8ef7] group-hover:opacity-100"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+              {editTooltip && (
+                <div className="pointer-events-none absolute right-0 top-full z-10 mt-1.5 w-44 origin-top-right scale-95 rounded-lg border border-[#2d3348] bg-[#0d0f18] px-2.5 py-1.5 text-[10px] leading-snug text-[#cbd5e1] opacity-0 shadow-xl transition-all duration-150 peer-hover:scale-100 peer-hover:opacity-100">
+                  {editTooltip}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
       <div className="mt-3">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-[#94a3b8]">{label}</p>
@@ -103,12 +126,15 @@ export default function OverviewPage() {
   const [goalDate, setGoalDate] = useState("");
   const [editingGoal, setEditingGoal] = useState<FinancialGoal | null>(null);
 
-  // Initial Savings (pre-MoneyMap) State — feeds Liquid Assets & the
-  // automated Emergency Fund calculation. Replaces the old manual
-  // "add to emergency fund" form.
-  const [savingsOffsetInput, setSavingsOffsetInput] = useState("");
-  const [updatingSavingsOffset, setUpdatingSavingsOffset] = useState(false);
+  // Initial Savings (pre-MoneyMap) — now edited via a sleek edit icon on the
+  // Liquid Assets card instead of a standalone form/card.
+  const [showSavingsModal, setShowSavingsModal] = useState(false);
   const [savingsOffsetSuccess, setSavingsOffsetSuccess] = useState("");
+
+  // Recurring / Fixed Expenses
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
+  const [recurringLoading, setRecurringLoading] = useState(false);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
 
   const fetchStatus = useCallback(async () => {
     if (!currentUser) return;
@@ -117,7 +143,6 @@ export default function OverviewPage() {
     try {
       const data = await getBudgetStatus(currentUser.id);
       setStatus(data);
-      setSavingsOffsetInput(String(data.manual_savings_offset ?? "0"));
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Could not load budget status."));
     } finally {
@@ -138,28 +163,31 @@ export default function OverviewPage() {
     }
   }, [currentUser]);
 
+  const fetchRecurringExpenses = useCallback(async () => {
+    if (!currentUser) return;
+    setRecurringLoading(true);
+    try {
+      const data = await getRecurringExpenses(currentUser.id);
+      setRecurringExpenses(data);
+    } catch {
+      // Non-critical for the main dashboard load — fail quietly here and
+      // let the modal itself surface any error if the user opens it.
+    } finally {
+      setRecurringLoading(false);
+    }
+  }, [currentUser]);
+
   useEffect(() => {
     void fetchStatus();
     void fetchGoals();
-  }, [fetchStatus, fetchGoals]);
+    void fetchRecurringExpenses();
+  }, [fetchStatus, fetchGoals, fetchRecurringExpenses]);
 
-  const handleSavingsOffsetSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentUser || savingsOffsetInput.trim() === "") return;
-    setError("");
-    setSavingsOffsetSuccess("");
-    setUpdatingSavingsOffset(true);
-
-    try {
-      const updatedUser = await updateSavingsOffset(currentUser.id, Number(savingsOffsetInput));
-      login(updatedUser); // keep AuthContext / localStorage in sync
-      setSavingsOffsetSuccess("Initial savings updated successfully!");
-      await fetchStatus();
-    } catch (err: unknown) {
-      setError(getErrorMessage(err, "Could not update your initial savings."));
-    } finally {
-      setUpdatingSavingsOffset(false);
-    }
+  const handleSavingsOffsetSaved = async (updatedUser: User) => {
+    login(updatedUser); // keep AuthContext / localStorage in sync
+    setShowSavingsModal(false);
+    setSavingsOffsetSuccess("Initial savings updated successfully!");
+    await fetchStatus();
   };
 
   const handleCreateGoal = async (e: React.FormEvent) => {
@@ -312,9 +340,16 @@ export default function OverviewPage() {
         </div>
       )}
 
+      {savingsOffsetSuccess && (
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-300">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+          <span>{savingsOffsetSuccess}</span>
+        </div>
+      )}
+
       {/* ── 1. Summary Cards (Compact, Lucide Icons, Indian Currency) ── */}
       {status && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
           <StatCard
             label="Monthly Income"
             value={formatINR(status.monthly_income)}
@@ -334,19 +369,14 @@ export default function OverviewPage() {
             sub={`Incl. ${formatINR(status.manual_savings_offset, true)} initial`}
             icon={<PiggyBank className="h-4 w-4 text-blue-400" />}
             badge="Rollover"
+            onEdit={() => setShowSavingsModal(true)}
+            editTooltip="Had savings before joining MoneyMap? Add them here"
           />
           <StatCard
             label="Savings Target"
             value={formatINR(status.savings_target)}
             sub={`${status.lifestyle_tier.toUpperCase()} tier`}
             icon={<Target className="h-4 w-4 text-amber-400" />}
-          />
-          <StatCard
-            label="Emergency Fund"
-            value={formatINR(status.emergency_fund_saved)}
-            sub={status.emergency_fund_status}
-            icon={<ShieldCheck className="h-4 w-4 text-purple-400" />}
-            accent={status.emergency_fund_saved >= status.emergency_fund_target ? "text-emerald-400" : "text-amber-400"}
           />
         </div>
       )}
@@ -543,51 +573,55 @@ export default function OverviewPage() {
         </div>
       )}
 
-      {/* ── 4b. Initial Savings (pre-MoneyMap) — feeds Liquid Assets & Emergency Fund ── */}
-      {status && (
-        <div className="rounded-2xl border border-[#2d3348] bg-[#1e2235] p-5 shadow-card space-y-3">
-          <div className="flex items-start gap-3">
+      {/* ── 4b. Recurring / Fixed Expenses ── */}
+      <div className="rounded-2xl border border-[#2d3348] bg-[#1e2235] p-5 shadow-card space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#252a3e] text-[#4f8ef7]">
-              <Landmark className="h-4 w-4" />
+              <Repeat className="h-4 w-4" />
             </div>
             <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">
-                Initial Savings
-              </h4>
-              <p className="mt-0.5 text-xs text-[#64748b]">
-                Had savings before joining MoneyMap? Add them here — they're included in your Total
-                Savings and Emergency Fund automatically, alongside your in-app rollover savings.
-              </p>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">Recurring Fixed Expenses</h4>
+              <p className="mt-0.5 text-xs text-[#64748b]">Rent, EMIs, subscriptions — auto-deducted on schedule</p>
             </div>
           </div>
-
-          {savingsOffsetSuccess && (
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-400">
-              {savingsOffsetSuccess}
-            </div>
-          )}
-
-          <form onSubmit={handleSavingsOffsetSave} className="flex gap-2">
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Pre-existing savings (₹)"
-              value={savingsOffsetInput}
-              onChange={(e) => setSavingsOffsetInput(e.target.value)}
-              className="flex-1 rounded-xl border border-[#2d3348] bg-[#151827] px-3 py-2 text-xs text-[#f1f5f9] outline-none focus:border-[#4f8ef7]"
-            />
-            <button
-              type="submit"
-              disabled={updatingSavingsOffset}
-              className="flex items-center gap-1.5 rounded-xl bg-[#4f8ef7] px-4 py-2 text-xs font-semibold text-white hover:bg-[#3b82f6] transition-all disabled:opacity-50"
-            >
-              <Pencil className="h-3 w-3" />
-              {updatingSavingsOffset ? "Saving…" : "Save"}
-            </button>
-          </form>
+          <button
+            onClick={() => setShowRecurringModal(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-[#4f8ef7] hover:text-[#6c63ff] transition-colors"
+          >
+            Manage
+          </button>
         </div>
-      )}
+
+        {recurringLoading ? (
+          <div className="py-6 text-center text-xs text-[#64748b]">Loading recurring expenses…</div>
+        ) : recurringExpenses.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-[#2d3348] bg-[#151827] p-6 text-center text-xs text-[#94a3b8]">
+            No recurring expenses configured yet.{" "}
+            <button onClick={() => setShowRecurringModal(true)} className="font-semibold text-[#4f8ef7] hover:underline">
+              Add one
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {recurringExpenses.slice(0, 4).map((item) => (
+              <div
+                key={item.id}
+                className={`flex items-center justify-between rounded-xl border border-[#2d3348] bg-[#151827] p-3 ${item.is_active ? "" : "opacity-50"
+                  }`}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-[#f1f5f9]">{item.title}</p>
+                  <p className="mt-0.5 text-[11px] text-[#64748b] capitalize">
+                    {item.frequency} · Next {new Date(item.next_deduction_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                  </p>
+                </div>
+                <p className="shrink-0 pl-2 text-sm font-bold text-[#f1f5f9]">{formatINR(item.amount)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* ── 5. Financial Goals with Forecasting & Priority ── */}
       <div className="rounded-2xl border border-[#2d3348] bg-[#1e2235] p-5 shadow-card space-y-4">
@@ -812,6 +846,27 @@ export default function OverviewPage() {
           goal={editingGoal}
           onClose={() => setEditingGoal(null)}
           onSaved={handleGoalUpdated}
+        />
+      )}
+
+      {showSavingsModal && currentUser && status && (
+        <InitialSavingsModal
+          userId={currentUser.id}
+          currentValue={Number(status.manual_savings_offset)}
+          onClose={() => setShowSavingsModal(false)}
+          onSaved={handleSavingsOffsetSaved}
+        />
+      )}
+
+      {showRecurringModal && currentUser && (
+        <RecurringExpensesModal
+          userId={currentUser.id}
+          items={recurringExpenses}
+          onClose={() => setShowRecurringModal(false)}
+          onChanged={() => {
+            void fetchRecurringExpenses();
+            void fetchStatus();
+          }}
         />
       )}
     </div>

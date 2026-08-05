@@ -86,22 +86,23 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
-    class UserSavingsUpdateRequest(BaseModel):
-        """
-        Request body for PUT /user/{user_id}/savings.
 
-        Lets a user manually set the lifetime savings they had *before* they
-        started using MoneyMap (e.g. money already sitting in a bank account).
-        This is a full replace, not a delta — the client sends the new total.
-        """
+class UserSavingsUpdateRequest(BaseModel):
+    """
+    Request body for PUT /user/{user_id}/savings.
 
-        manual_savings_offset: Decimal = Field(
-            ...,
-            ge=0,
-            max_digits=14,
-            decimal_places=2,
-            description="Total pre-existing savings from before using MoneyMap, in INR.",
-        )
+    Lets a user manually set the lifetime savings they had *before* they
+    started using MoneyMap (e.g. money already sitting in a bank account).
+    This is a full replace, not a delta — the client sends the new total.
+    """
+
+    manual_savings_offset: Decimal = Field(
+        ...,
+        ge=0,
+        max_digits=14,
+        decimal_places=2,
+        description="Total pre-existing savings from before using MoneyMap, in INR.",
+    )
 
 
 # -------------------------
@@ -435,3 +436,50 @@ class BudgetStatusResponse(BaseModel):
 
     # Dynamic automated smart insights
     insights: list[FinancialInsight] = []
+
+# ---------------------------------------------------------------------------
+# Recurring / Fixed Expense Schemas
+# ---------------------------------------------------------------------------
+
+RecurringFrequency = Literal["monthly", "quarterly"]
+
+
+class RecurringExpenseBase(BaseModel):
+    title: str = Field(..., min_length=1, max_length=150, description="e.g. 'Rent', 'Netflix', 'Car EMI'")
+    amount: Decimal = Field(..., gt=0, max_digits=10, decimal_places=2)
+    category: str = Field(..., min_length=1, max_length=100)
+    frequency: RecurringFrequency = Field(..., description="'monthly' or 'quarterly'")
+    # Day-of-month (1-28) the deduction should occur on. Kept simple and
+    # timezone-free — quarterly items are just charged every 3rd occurrence
+    # of that day, starting from next_deduction_date.
+    deduction_day: int = Field(..., ge=1, le=28, description="Day of the month the deduction runs on (1-28)")
+    comment: str | None = Field(None, max_length=255)
+
+
+class RecurringExpenseCreate(RecurringExpenseBase):
+    user_id: int
+    # Optional explicit first-run date; defaults to the next occurrence of
+    # deduction_day (this month if it hasn't passed yet, else next month).
+    start_date: date | None = None
+
+
+class RecurringExpenseUpdate(BaseModel):
+    """Every field optional — client sends only what changed."""
+
+    title: str | None = Field(None, min_length=1, max_length=150)
+    amount: Decimal | None = Field(None, gt=0, max_digits=10, decimal_places=2)
+    category: str | None = Field(None, min_length=1, max_length=100)
+    frequency: RecurringFrequency | None = None
+    deduction_day: int | None = Field(None, ge=1, le=28)
+    comment: str | None = Field(None, max_length=255)
+    is_active: bool | None = None
+
+
+class RecurringExpenseResponse(RecurringExpenseBase):
+    id: int
+    user_id: int
+    next_deduction_date: date
+    is_active: bool
+
+    class Config:
+        from_attributes = True

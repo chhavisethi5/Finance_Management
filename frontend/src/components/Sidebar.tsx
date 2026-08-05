@@ -103,13 +103,27 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
           ))}
         </nav>
 
-        {/* ── Collapse toggle (desktop only) ── */}
+        {/* ── Collapse toggle (desktop only) ──
+             Deliberately subtle: no border/background block — it blends into
+             the sidebar until hovered, rather than reading as a harsh button. */}
         <button
           onClick={onToggleCollapse}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="hidden lg:flex items-center justify-center gap-2 mx-3 mb-3 rounded-xl border border-[#2d3348] bg-[#1a1d27] py-2 text-xs font-medium text-[#94a3b8] hover:text-[#f1f5f9] hover:border-[#4f8ef7]/40 transition-all"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className={[
+            "hidden lg:flex items-center gap-2 mx-3 mb-3 rounded-lg py-1.5 text-[11px] font-medium",
+            "text-[#475569] hover:text-[#94a3b8] hover:bg-white/[0.03] transition-colors duration-150",
+            collapsed ? "justify-center px-0" : "px-2.5",
+          ].join(" ")}
         >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <><ChevronLeft className="h-4 w-4" /> Collapse</>}
+          {collapsed ? (
+            <ChevronRight className="h-3.5 w-3.5" />
+          ) : (
+            <>
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Collapse
+            </>
+          )}
         </button>
 
         {/* ── User + Logout ── */}

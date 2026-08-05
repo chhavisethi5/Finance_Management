@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric, Date, ForeignKey, CheckConstraint, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Numeric, Date, Boolean, ForeignKey, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -42,6 +42,9 @@ class User(Base):
     # Goals and savings history
     financial_goals = relationship("FinancialGoal", back_populates="user", cascade="all, delete-orphan")
     monthly_savings = relationship("MonthlySavings", back_populates="user", cascade="all, delete-orphan")
+
+    # Recurring / fixed expenses (rent, EMIs, subscriptions, etc.)
+    recurring_expenses = relationship("RecurringExpense", back_populates="user", cascade="all, delete-orphan")
 
 
 class Transaction(Base):
@@ -145,3 +148,37 @@ class FinancialGoal(Base):
     priority = Column(String(20), nullable=False, default="Medium")
 
     user = relationship("User", back_populates="financial_goals")
+
+
+class RecurringExpense(Base):
+    """
+    A fixed/recurring expense the user wants auto-deducted on a schedule
+    (rent, EMIs, subscriptions, utilities, etc.).
+
+    `next_deduction_date` is advanced automatically each time the expense
+    is processed (see `_process_due_recurring_expenses` in main.py):
+    +1 month for 'monthly', +3 months for 'quarterly'. Each time it fires,
+    a matching row is written into `transactions` (type='expense') so the
+    deduction shows up in expense history and is reflected in Monthly
+    Savings / Liquid Assets exactly like a manually logged expense.
+    """
+    __tablename__ = "recurring_expenses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(150), nullable=False)
+    amount = Column(Numeric(10, 2), nullable=False)
+    category = Column(String(100), nullable=False)
+    frequency = Column(String(20), nullable=False)  # 'monthly' or 'quarterly'
+    deduction_day = Column(Integer, nullable=False)  # day-of-month, 1-28
+    next_deduction_date = Column(Date, nullable=False)
+    comment = Column(String(255), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    user = relationship("User", back_populates="recurring_expenses")
+
+    __table_args__ = (
+        CheckConstraint("frequency IN ('monthly', 'quarterly')", name="check_recurring_frequency"),
+        CheckConstraint("amount > 0", name="check_recurring_amount_positive"),
+        CheckConstraint("deduction_day >= 1 AND deduction_day <= 28", name="check_recurring_day_range"),
+    )

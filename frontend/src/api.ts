@@ -181,6 +181,41 @@ export interface UserSavingsUpdatePayload {
   manual_savings_offset: number;
 }
 
+export interface RecurringExpense {
+  id: number;
+  user_id: number;
+  title: string;
+  amount: number;
+  category: string;
+  frequency: "monthly" | "quarterly";
+  deduction_day: number;
+  next_deduction_date: string;
+  comment: string | null;
+  is_active: boolean;
+}
+
+export interface RecurringExpenseCreatePayload {
+  user_id: number;
+  title: string;
+  amount: number;
+  category: string;
+  frequency: "monthly" | "quarterly";
+  deduction_day: number;
+  comment?: string;
+  start_date?: string;
+}
+
+/** Partial update payload for PUT /recurring-expenses/{id} — every field optional. */
+export interface RecurringExpenseUpdatePayload {
+  title?: string;
+  amount?: number;
+  category?: string;
+  frequency?: "monthly" | "quarterly";
+  deduction_day?: number;
+  comment?: string | null;
+  is_active?: boolean;
+}
+
 
 
 // ─── Auth API functions ──────────────────────────────────────────────────────
@@ -269,3 +304,21 @@ export const updateFinancialGoal = (goal_id: number, payload: FinancialGoalUpdat
 /** Fetch every transaction ever logged for a user, newest first. */
 export const getTransactions = (user_id: number) =>
   api.get<Transaction[]>(`/transactions/${user_id}`).then((r) => r.data);
+
+// ─── Recurring / Fixed Expenses ──────────────────────────────────────────────
+
+/** Create a new recurring/fixed expense (rent, EMI, subscription, etc.). */
+export const createRecurringExpense = (payload: RecurringExpenseCreatePayload) =>
+  api.post<RecurringExpense>("/recurring-expenses/", payload).then((r) => r.data);
+
+/** List every recurring/fixed expense configured for a user. */
+export const getRecurringExpenses = (user_id: number) =>
+  api.get<RecurringExpense[]>(`/recurring-expenses/${user_id}`).then((r) => r.data);
+
+/** Update a recurring/fixed expense's amount, schedule, category, or active state. */
+export const updateRecurringExpense = (expense_id: number, payload: RecurringExpenseUpdatePayload) =>
+  api.put<RecurringExpense>(`/recurring-expenses/${expense_id}`, payload).then((r) => r.data);
+
+/** Permanently delete a recurring/fixed expense. */
+export const deleteRecurringExpense = (expense_id: number) =>
+  api.delete<void>(`/recurring-expenses/${expense_id}`).then(() => undefined);
