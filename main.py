@@ -42,10 +42,10 @@ app = FastAPI(
 # Tighten allow_origins to specific domains before going to production.
 # ---------------------------------------------------------------------------
 _origins = [
+    "https://explore-moneymap.vercel.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
-    "https://explore-moneymap.vercel.app",
 ]
 if os.environ.get("FRONTEND_URL"):
     _origins.append(os.environ["FRONTEND_URL"])
