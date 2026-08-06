@@ -5,20 +5,22 @@
  * Right panel: Transaction history placeholder (future)
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Repeat } from "lucide-react";
 import {
   createTransaction,
   getTransactions,
   deleteTransaction,
+  getRecurringExpenses,
   formatINR,
   getErrorMessage,
 } from "../api";
-import type { Transaction } from "../api";
+import type { Transaction, RecurringExpense } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from "../constants/categories";
 import EditTransactionModal from "../components/EditTransactionModal";
+import RecurringExpensesModal from "../components/RecurringExpensesModal";
 
 export default function TransactionsPage() {
   const { currentUser } = useAuth();
@@ -38,6 +40,29 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  // Recurring / Fixed Expenses
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
+  const [recurringLoading, setRecurringLoading] = useState(false);
+  const [showRecurringModal, setShowRecurringModal] = useState(false);
+
+  const fetchRecurringExpenses = useCallback(async () => {
+    if (!currentUser) return;
+    setRecurringLoading(true);
+    try {
+      const data = await getRecurringExpenses(currentUser.id);
+      setRecurringExpenses(data);
+    } catch {
+      // Non-critical for the main page load — fail quietly here and
+      // let the modal itself surface any error if the user opens it.
+    } finally {
+      setRecurringLoading(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    void fetchRecurringExpenses();
+  }, [fetchRecurringExpenses]);
 
   const fetchTransactions = async () => {
     if (!currentUser) return;
@@ -129,6 +154,56 @@ export default function TransactionsPage() {
       <div>
         <h3 className="text-xl font-bold text-[#f1f5f9]">Transactions</h3>
         <p className="text-sm text-[#475569] mt-0.5">Log new income or expenses and track your history.</p>
+      </div>
+
+      {/* ── Recurring / Fixed Expenses ── */}
+      <div className="rounded-2xl border border-[#2d3348] bg-[#1e2235] p-5 shadow-card space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#252a3e] text-[#4f8ef7]">
+              <Repeat className="h-4 w-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">Recurring Fixed Expenses</h4>
+              <p className="mt-0.5 text-xs text-[#64748b]">Rent, EMIs, subscriptions — auto-deducted on schedule</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowRecurringModal(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-[#4f8ef7] hover:text-[#6c63ff] transition-colors"
+          >
+            Manage
+          </button>
+        </div>
+
+        {recurringLoading ? (
+          <div className="py-6 text-center text-xs text-[#64748b]">Loading recurring expenses…</div>
+        ) : recurringExpenses.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-[#2d3348] bg-[#151827] p-6 text-center text-xs text-[#94a3b8]">
+            No recurring expenses configured yet.{" "}
+            <button onClick={() => setShowRecurringModal(true)} className="font-semibold text-[#4f8ef7] hover:underline">
+              Add one
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {recurringExpenses.slice(0, 4).map((item) => (
+              <div
+                key={item.id}
+                className={`flex items-center justify-between rounded-xl border border-[#2d3348] bg-[#151827] p-3 ${item.is_active ? "" : "opacity-50"
+                  }`}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-semibold text-[#f1f5f9]">{item.title}</p>
+                  <p className="mt-0.5 text-[11px] text-[#64748b] capitalize">
+                    {item.frequency} · Next {new Date(item.next_deduction_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                  </p>
+                </div>
+                <p className="shrink-0 pl-2 text-sm font-bold text-[#f1f5f9]">{formatINR(item.amount)}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -328,6 +403,18 @@ export default function TransactionsPage() {
           transaction={editingTx}
           onClose={() => setEditingTx(null)}
           onSaved={handleEditSaved}
+        />
+      )}
+
+      {showRecurringModal && currentUser && (
+        <RecurringExpensesModal
+          userId={currentUser.id}
+          items={recurringExpenses}
+          onClose={() => setShowRecurringModal(false)}
+          onChanged={() => {
+            void fetchRecurringExpenses();
+            void fetchTransactions();
+          }}
         />
       )}
     </div>

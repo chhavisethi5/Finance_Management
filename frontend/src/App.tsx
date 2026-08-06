@@ -13,6 +13,7 @@ import OverviewPage from "./pages/OverviewPage";
 import TransactionsPage from "./pages/TransactionsPage";
 import TransactionHistoryPage from "./pages/TransactionHistoryPage";
 import BudgetPlannerPage from "./pages/BudgetPlannerPage";
+import InvestmentsPage from "./pages/InvestmentsPage";
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
         <Route index element={<OverviewPage />} />
         <Route path="transactions" element={<TransactionsPage />} />
         <Route path="history" element={<TransactionHistoryPage />} />
+        <Route path="investments" element={<InvestmentsPage />} />
         <Route path="budget-planner" element={<BudgetPlannerPage />} />
       </Route>
 

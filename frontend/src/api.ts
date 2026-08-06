@@ -216,6 +216,85 @@ export interface RecurringExpenseUpdatePayload {
   is_active?: boolean;
 }
 
+// ─── Investments ──────────────────────────────────────────────────────────
+
+export type InvestmentType =
+  | "Property"
+  | "Precious Metals"
+  | "Stocks"
+  | "Mutual Funds"
+  | "Bank FD"
+  | "Post Office";
+
+export interface Investment {
+  id: number;
+  user_id: number;
+  investment_type: InvestmentType;
+  amount: number;
+  // Precious Metals -> metal name (Gold/Silver/Diamond/Platinum). Property -> property type.
+  sub_type: string | null;
+  // Precious Metals -> grams. Property -> number of properties.
+  quantity: number | null;
+  investment_date: string;
+  comment: string | null;
+}
+
+export interface InvestmentCreatePayload {
+  user_id: number;
+  investment_type: InvestmentType;
+  amount: number;
+  sub_type?: string;
+  quantity?: number;
+  investment_date: string;
+  comment?: string;
+}
+
+/** Partial update payload for PUT /investments/{id} — every field optional. */
+export interface InvestmentUpdatePayload {
+  investment_type?: InvestmentType;
+  amount?: number;
+  sub_type?: string;
+  quantity?: number;
+  investment_date?: string;
+  comment?: string | null;
+}
+
+export interface PropertyItem {
+  property_type: string;
+  amount: number;
+}
+
+/** The "Initial Past Investments Setup" summary — one per user. */
+export interface InvestmentProfile {
+  id: number;
+  user_id: number;
+  properties: PropertyItem[];
+  property_count: number;
+  gold_grams: number;
+  silver_grams: number;
+  diamond_grams: number;
+  platinum_grams: number;
+  stocks_value: number;
+  mutual_funds_value: number;
+  bank_fd_value: number;
+  post_office_value: number;
+  comment: string | null;
+}
+
+/** Full-replace payload for PUT /investment-profile/{user_id}. */
+export interface InvestmentProfilePayload {
+  properties: PropertyItem[];
+  gold_grams: number;
+  silver_grams: number;
+  diamond_grams: number;
+  platinum_grams: number;
+  stocks_value: number;
+  mutual_funds_value: number;
+  bank_fd_value: number;
+  post_office_value: number;
+  comment?: string | null;
+}
+
 
 
 // ─── Auth API functions ──────────────────────────────────────────────────────
@@ -322,3 +401,31 @@ export const updateRecurringExpense = (expense_id: number, payload: RecurringExp
 /** Permanently delete a recurring/fixed expense. */
 export const deleteRecurringExpense = (expense_id: number) =>
   api.delete<void>(`/recurring-expenses/${expense_id}`).then(() => undefined);
+
+// ─── Investments ──────────────────────────────────────────────────────────
+
+/** Log a new investment. Auto-deducts the amount from the user's Liquid Assets. */
+export const createInvestment = (payload: InvestmentCreatePayload) =>
+  api.post<Investment>("/investments/", payload).then((r) => r.data);
+
+/** List a user's investment history, optionally filtered by exact type and/or free-text search. */
+export const getInvestments = (user_id: number, filters?: { investment_type?: string; search?: string }) =>
+  api
+    .get<Investment[]>(`/investments/${user_id}`, { params: filters })
+    .then((r) => r.data);
+
+/** Update an investment. If the amount changed, Liquid Assets is re-adjusted by the delta. */
+export const updateInvestment = (investment_id: number, payload: InvestmentUpdatePayload) =>
+  api.put<Investment>(`/investments/${investment_id}`, payload).then((r) => r.data);
+
+/** Delete an investment. Refunds its amount back into the user's Liquid Assets. */
+export const deleteInvestment = (investment_id: number) =>
+  api.delete<void>(`/investments/${investment_id}`).then(() => undefined);
+
+/** Fetch a user's "Initial Past Investments Setup" summary (zeroed defaults if never saved). */
+export const getInvestmentProfile = (user_id: number) =>
+  api.get<InvestmentProfile>(`/investment-profile/${user_id}`).then((r) => r.data);
+
+/** Create or replace a user's "Initial Past Investments Setup" summary. */
+export const updateInvestmentProfile = (user_id: number, payload: InvestmentProfilePayload) =>
+  api.put<InvestmentProfile>(`/investment-profile/${user_id}`, payload).then((r) => r.data);

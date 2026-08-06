@@ -1,6 +1,6 @@
 from datetime import date
 from decimal import Decimal
-from typing import Literal, Dict
+from typing import Literal, Dict, List
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
@@ -480,6 +480,89 @@ class RecurringExpenseResponse(RecurringExpenseBase):
     user_id: int
     next_deduction_date: date
     is_active: bool
+
+    class Config:
+        from_attributes = True
+
+# ---------------------------------------------------------------------------
+# Investment Schemas
+# ---------------------------------------------------------------------------
+
+InvestmentType = Literal[
+    "Property", "Precious Metals", "Stocks", "Mutual Funds", "Bank FD", "Post Office"
+]
+
+
+class InvestmentBase(BaseModel):
+    investment_type: InvestmentType
+    amount: Decimal = Field(..., gt=0, max_digits=12, decimal_places=2)
+    # Precious Metals -> metal name ('Gold'/'Silver'/'Diamond'/'Platinum')
+    # Property        -> property type (e.g. 'Residential', 'Commercial', 'Land')
+    # Stocks / Mutual Funds / Bank FD / Post Office -> unused
+    sub_type: str | None = Field(None, max_length=100)
+    # Precious Metals -> grams. Property -> number of properties. Others -> unused.
+    quantity: Decimal | None = Field(None, ge=0, max_digits=12, decimal_places=3)
+    investment_date: date
+    comment: str | None = Field(None, max_length=255)
+
+    @model_validator(mode="after")
+    def _validate_type_specific_fields(self):
+        if self.investment_type == "Precious Metals" and (self.quantity is None or self.quantity <= 0):
+            raise ValueError("Precious Metals investments require a quantity in grams greater than 0.")
+        if self.investment_type == "Precious Metals" and not self.sub_type:
+            raise ValueError("Precious Metals investments require a metal type (sub_type).")
+        if self.investment_type == "Property" and not self.sub_type:
+            raise ValueError("Property investments require a property type (sub_type).")
+        return self
+
+
+class InvestmentCreate(InvestmentBase):
+    user_id: int
+
+
+class InvestmentUpdate(BaseModel):
+    """Every field optional — client sends only what changed."""
+
+    investment_type: InvestmentType | None = None
+    amount: Decimal | None = Field(None, gt=0, max_digits=12, decimal_places=2)
+    sub_type: str | None = Field(None, max_length=100)
+    quantity: Decimal | None = Field(None, ge=0, max_digits=12, decimal_places=3)
+    investment_date: date | None = None
+    comment: str | None = Field(None, max_length=255)
+
+
+class InvestmentResponse(InvestmentBase):
+    id: int
+    user_id: int
+
+    class Config:
+        from_attributes = True
+
+
+class PropertyItem(BaseModel):
+    property_type: str = Field(..., min_length=1, max_length=100)
+    amount: Decimal = Field(..., ge=0, max_digits=14, decimal_places=2)
+
+
+class InvestmentProfileUpdate(BaseModel):
+    """Full replace payload for the 'Initial Past Investments Setup' summary."""
+
+    properties: List[PropertyItem] = Field(default_factory=list)
+    gold_grams: Decimal = Field(Decimal("0"), ge=0, max_digits=12, decimal_places=3)
+    silver_grams: Decimal = Field(Decimal("0"), ge=0, max_digits=12, decimal_places=3)
+    diamond_grams: Decimal = Field(Decimal("0"), ge=0, max_digits=12, decimal_places=3)
+    platinum_grams: Decimal = Field(Decimal("0"), ge=0, max_digits=12, decimal_places=3)
+    stocks_value: Decimal = Field(Decimal("0"), ge=0, max_digits=14, decimal_places=2)
+    mutual_funds_value: Decimal = Field(Decimal("0"), ge=0, max_digits=14, decimal_places=2)
+    bank_fd_value: Decimal = Field(Decimal("0"), ge=0, max_digits=14, decimal_places=2)
+    post_office_value: Decimal = Field(Decimal("0"), ge=0, max_digits=14, decimal_places=2)
+    comment: str | None = Field(None, max_length=255)
+
+
+class InvestmentProfileResponse(InvestmentProfileUpdate):
+    id: int
+    user_id: int
+    property_count: int
 
     class Config:
         from_attributes = True

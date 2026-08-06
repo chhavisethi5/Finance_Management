@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", icon: "📊", label: "Overview", end: true },
   { to: "/dashboard/transactions", icon: "💸", label: "Transactions" },
   { to: "/dashboard/history", icon: "🕒", label: "History" },
+  { to: "/dashboard/investments", icon: "📈", label: "Investments" },
   { to: "/dashboard/budget-planner", icon: "🎯", label: "Budget Planner" },
 ];
 

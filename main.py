@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -692,6 +692,225 @@ def delete_recurring_expense(expense_id: int, db: Session = Depends(get_db)):
     db.delete(item)
     db.commit()
     return None
+
+# ---------------------------------------------------------------------------
+# Investments — "+ Add New Investment" history (CRUD) + auto-deduction
+# ---------------------------------------------------------------------------
+
+def _serialize_investment(item: models.Investment) -> schemas.InvestmentResponse:
+    return schemas.InvestmentResponse(
+        id=item.id,
+        user_id=item.user_id,
+        investment_type=item.investment_type,
+        amount=item.amount,
+        sub_type=item.sub_type,
+        quantity=item.quantity,
+        investment_date=item.investment_date,
+        comment=item.comment,
+    )
+
+
+@app.post(
+    "/investments/",
+    response_model=schemas.InvestmentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Log a new investment (auto-deducts the amount from Liquid Assets)",
+    tags=["Investments"],
+)
+def create_investment(payload: schemas.InvestmentCreate, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.id == payload.user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with ID {payload.user_id} not found")
+
+    item = models.Investment(
+        user_id=payload.user_id,
+        investment_type=payload.investment_type,
+        amount=payload.amount,
+        sub_type=payload.sub_type.strip() if payload.sub_type else None,
+        quantity=payload.quantity,
+        investment_date=payload.investment_date,
+        comment=payload.comment.strip() if payload.comment else None,
+    )
+    db.add(item)
+
+    # Auto-deduction: Liquid Assets is derived from manual_savings_offset
+    # (see /budget-status), so subtracting here immediately reduces it.
+    db_user.manual_savings_offset = (db_user.manual_savings_offset - payload.amount).quantize(Decimal("0.01"))
+
+    db.commit()
+    db.refresh(item)
+    return _serialize_investment(item)
+
+
+@app.get(
+    "/investments/{user_id}",
+    response_model=list[schemas.InvestmentResponse],
+    summary="List a user's investments, optionally filtered by type or free-text search",
+    tags=["Investments"],
+)
+def list_investments(
+    user_id: int,
+    investment_type: str | None = Query(None, description="Exact match, e.g. 'Stocks'"),
+    search: str | None = Query(None, description="Case-insensitive match against type, sub-type, or comment"),
+    db: Session = Depends(get_db),
+):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with ID {user_id} not found")
+
+    query = db.query(models.Investment).filter(models.Investment.user_id == user_id)
+
+    if investment_type:
+        query = query.filter(models.Investment.investment_type == investment_type)
+
+    if search:
+        like = f"%{search.strip()}%"
+        query = query.filter(
+            (models.Investment.investment_type.ilike(like))
+            | (models.Investment.sub_type.ilike(like))
+            | (models.Investment.comment.ilike(like))
+        )
+
+    items = query.order_by(models.Investment.investment_date.desc(), models.Investment.id.desc()).all()
+    return [_serialize_investment(i) for i in items]
+
+
+@app.put(
+    "/investments/{investment_id}",
+    response_model=schemas.InvestmentResponse,
+    summary="Update an investment (re-adjusts Liquid Assets if the amount changed)",
+    tags=["Investments"],
+)
+def update_investment(investment_id: int, update: schemas.InvestmentUpdate, db: Session = Depends(get_db)):
+    item = db.query(models.Investment).filter(models.Investment.id == investment_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Investment {investment_id} not found")
+
+    update_data = update.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields provided to update.")
+
+    if "sub_type" in update_data and update_data["sub_type"] is not None:
+        update_data["sub_type"] = update_data["sub_type"].strip()
+    if "comment" in update_data and update_data["comment"] is not None:
+        update_data["comment"] = update_data["comment"].strip() or None
+
+    # If the invested amount changed, apply just the delta to manual_savings_offset
+    # so Liquid Assets ends up exactly where it would if this had been entered correctly.
+    if "amount" in update_data and update_data["amount"] != item.amount:
+        db_user = db.query(models.User).filter(models.User.id == item.user_id).first()
+        delta = update_data["amount"] - item.amount  # positive => invested more => deduct more
+        db_user.manual_savings_offset = (db_user.manual_savings_offset - delta).quantize(Decimal("0.01"))
+
+    for field, value in update_data.items():
+        setattr(item, field, value)
+
+    db.commit()
+    db.refresh(item)
+    return _serialize_investment(item)
+
+
+@app.delete(
+    "/investments/{investment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an investment (refunds the amount back into Liquid Assets)",
+    tags=["Investments"],
+)
+def delete_investment(investment_id: int, db: Session = Depends(get_db)):
+    item = db.query(models.Investment).filter(models.Investment.id == investment_id).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Investment {investment_id} not found")
+
+    db_user = db.query(models.User).filter(models.User.id == item.user_id).first()
+    if db_user:
+        db_user.manual_savings_offset = (db_user.manual_savings_offset + item.amount).quantize(Decimal("0.01"))
+
+    db.delete(item)
+    db.commit()
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Investment Profile — "Initial Past Investments Setup" (one row per user)
+# ---------------------------------------------------------------------------
+
+def _serialize_investment_profile(profile: models.InvestmentProfile) -> schemas.InvestmentProfileResponse:
+    props = profile.properties or []
+    return schemas.InvestmentProfileResponse(
+        id=profile.id,
+        user_id=profile.user_id,
+        properties=[schemas.PropertyItem(**p) for p in props],
+        property_count=len(props),
+        gold_grams=profile.gold_grams,
+        silver_grams=profile.silver_grams,
+        diamond_grams=profile.diamond_grams,
+        platinum_grams=profile.platinum_grams,
+        stocks_value=profile.stocks_value,
+        mutual_funds_value=profile.mutual_funds_value,
+        bank_fd_value=profile.bank_fd_value,
+        post_office_value=profile.post_office_value,
+        comment=profile.comment,
+    )
+
+
+_EMPTY_INVESTMENT_PROFILE_KWARGS = dict(
+    properties=[], gold_grams=Decimal("0"), silver_grams=Decimal("0"),
+    diamond_grams=Decimal("0"), platinum_grams=Decimal("0"), stocks_value=Decimal("0"),
+    mutual_funds_value=Decimal("0"), bank_fd_value=Decimal("0"), post_office_value=Decimal("0"),
+    comment=None,
+)
+
+
+@app.get(
+    "/investment-profile/{user_id}",
+    response_model=schemas.InvestmentProfileResponse,
+    summary="Fetch a user's Initial Past Investments Setup summary",
+    tags=["Investments"],
+)
+def get_investment_profile(user_id: int, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with ID {user_id} not found")
+
+    profile = db.query(models.InvestmentProfile).filter(models.InvestmentProfile.user_id == user_id).first()
+    if not profile:
+        # Nothing saved yet — hand back zeroed defaults without persisting anything.
+        return schemas.InvestmentProfileResponse(id=0, user_id=user_id, property_count=0, **_EMPTY_INVESTMENT_PROFILE_KWARGS)
+    return _serialize_investment_profile(profile)
+
+
+@app.put(
+    "/investment-profile/{user_id}",
+    response_model=schemas.InvestmentProfileResponse,
+    summary="Create or replace a user's Initial Past Investments Setup summary",
+    tags=["Investments"],
+)
+def upsert_investment_profile(user_id: int, payload: schemas.InvestmentProfileUpdate, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with ID {user_id} not found")
+
+    properties_json = [p.model_dump(mode="json") for p in payload.properties]
+    profile = db.query(models.InvestmentProfile).filter(models.InvestmentProfile.user_id == user_id).first()
+
+    if not profile:
+        profile = models.InvestmentProfile(user_id=user_id)
+        db.add(profile)
+
+    profile.properties = properties_json
+    profile.gold_grams = payload.gold_grams
+    profile.silver_grams = payload.silver_grams
+    profile.diamond_grams = payload.diamond_grams
+    profile.platinum_grams = payload.platinum_grams
+    profile.stocks_value = payload.stocks_value
+    profile.mutual_funds_value = payload.mutual_funds_value
+    profile.bank_fd_value = payload.bank_fd_value
+    profile.post_office_value = payload.post_office_value
+    profile.comment = payload.comment.strip() if payload.comment else None
+
+    db.commit()
+    db.refresh(profile)
+    return _serialize_investment_profile(profile)
 
 def _serialize_financial_goal(goal: models.FinancialGoal) -> schemas.FinancialGoalResponse:
     today = date.today()

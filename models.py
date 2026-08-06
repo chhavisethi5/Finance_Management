@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric, Date, Boolean, ForeignKey, CheckConstraint, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Numeric, Date, Boolean, JSON, ForeignKey, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -45,6 +45,14 @@ class User(Base):
 
     # Recurring / fixed expenses (rent, EMIs, subscriptions, etc.)
     recurring_expenses = relationship("RecurringExpense", back_populates="user", cascade="all, delete-orphan")
+
+    # Investment history (individual "+ Add New Investment" entries)
+    investments = relationship("Investment", back_populates="user", cascade="all, delete-orphan")
+
+    # One-to-one "Initial Past Investments Setup" summary
+    investment_profile = relationship(
+        "InvestmentProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class Transaction(Base):
@@ -181,4 +189,73 @@ class RecurringExpense(Base):
         CheckConstraint("frequency IN ('monthly', 'quarterly')", name="check_recurring_frequency"),
         CheckConstraint("amount > 0", name="check_recurring_amount_positive"),
         CheckConstraint("deduction_day >= 1 AND deduction_day <= 28", name="check_recurring_day_range"),
+    )
+
+class Investment(Base):
+    """
+    A single logged investment ("+ Add New Investment"). Each entry belongs to
+    one of six types (Property, Precious Metals, Stocks, Mutual Funds, Bank
+    FD, Post Office). `sub_type` / `quantity` hold the type-specific details:
+      - Property:        sub_type = property type (e.g. 'Residential'), quantity = number of properties
+      - Precious Metals:  sub_type = metal (Gold/Silver/Diamond/Platinum), quantity = grams
+      - Stocks / Mutual Funds / Bank FD / Post Office: sub_type & quantity unused (amount only)
+
+    Creating an Investment automatically deducts `amount` from the user's
+    `manual_savings_offset` (see create_investment in main.py), which is the
+    same field Liquid Assets is derived from — mirroring how recurring
+    expenses auto-deduct via a generated transaction.
+    """
+    __tablename__ = "investments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    investment_type = Column(String(50), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    sub_type = Column(String(100), nullable=True)
+    quantity = Column(Numeric(12, 3), nullable=True)
+    investment_date = Column("date", Date, nullable=False)
+    comment = Column(String(255), nullable=True)
+
+    user = relationship("User", back_populates="investments")
+
+    __table_args__ = (
+        CheckConstraint(
+            "investment_type IN ('Property','Precious Metals','Stocks','Mutual Funds','Bank FD','Post Office')",
+            name="check_investment_type",
+        ),
+        CheckConstraint("amount > 0", name="check_investment_amount_positive"),
+    )
+
+
+class InvestmentProfile(Base):
+    """
+    One row per user: the "Initial Past Investments Setup" summary of
+    investments made *before* they started using MoneyMap. Purely
+    informational, like `manual_savings_offset` — unlike a new Investment
+    entry, saving/editing this does NOT touch Liquid Assets.
+    """
+    __tablename__ = "investment_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    # List of {"property_type": str, "amount": number} objects
+    properties = Column(JSON, nullable=False, default=list)
+
+    gold_grams = Column(Numeric(12, 3), nullable=False, default=0)
+    silver_grams = Column(Numeric(12, 3), nullable=False, default=0)
+    diamond_grams = Column(Numeric(12, 3), nullable=False, default=0)
+    platinum_grams = Column(Numeric(12, 3), nullable=False, default=0)
+
+    stocks_value = Column(Numeric(14, 2), nullable=False, default=0)
+    mutual_funds_value = Column(Numeric(14, 2), nullable=False, default=0)
+    bank_fd_value = Column(Numeric(14, 2), nullable=False, default=0)
+    post_office_value = Column(Numeric(14, 2), nullable=False, default=0)
+
+    comment = Column(String(255), nullable=True)
+
+    user = relationship("User", back_populates="investment_profile")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_investment_profile_user"),
     )

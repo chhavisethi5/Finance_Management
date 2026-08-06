@@ -11,11 +11,10 @@ import {
   getBudgetStatus,
   getFinancialGoals,
   createFinancialGoal,
-  getRecurringExpenses,
   formatINR,
   getErrorMessage,
 } from "../api";
-import type { BudgetStatus, FinancialGoal, RecurringExpense, User } from "../api";
+import type { BudgetStatus, FinancialGoal, User } from "../api";
 import { useAuth } from "../context/AuthContext";
 import ProgressBar from "../components/ProgressBar";
 import {
@@ -32,11 +31,9 @@ import {
   PieChart as PieChartIcon,
   BarChart3,
   Pencil,
-  Repeat,
 } from "lucide-react";
 import EditGoalModal from "../components/EditGoalModal";
 import InitialSavingsModal from "../components/InitialSavingsModal";
-import RecurringExpensesModal from "../components/RecurringExpensesModal";
 import {
   ResponsiveContainer,
   BarChart,
@@ -131,11 +128,6 @@ export default function OverviewPage() {
   const [showSavingsModal, setShowSavingsModal] = useState(false);
   const [savingsOffsetSuccess, setSavingsOffsetSuccess] = useState("");
 
-  // Recurring / Fixed Expenses
-  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
-  const [recurringLoading, setRecurringLoading] = useState(false);
-  const [showRecurringModal, setShowRecurringModal] = useState(false);
-
   const fetchStatus = useCallback(async () => {
     if (!currentUser) return;
     setError("");
@@ -163,25 +155,10 @@ export default function OverviewPage() {
     }
   }, [currentUser]);
 
-  const fetchRecurringExpenses = useCallback(async () => {
-    if (!currentUser) return;
-    setRecurringLoading(true);
-    try {
-      const data = await getRecurringExpenses(currentUser.id);
-      setRecurringExpenses(data);
-    } catch {
-      // Non-critical for the main dashboard load — fail quietly here and
-      // let the modal itself surface any error if the user opens it.
-    } finally {
-      setRecurringLoading(false);
-    }
-  }, [currentUser]);
-
   useEffect(() => {
     void fetchStatus();
     void fetchGoals();
-    void fetchRecurringExpenses();
-  }, [fetchStatus, fetchGoals, fetchRecurringExpenses]);
+  }, [fetchStatus, fetchGoals]);
 
   const handleSavingsOffsetSaved = async (updatedUser: User) => {
     login(updatedUser); // keep AuthContext / localStorage in sync
@@ -573,56 +550,6 @@ export default function OverviewPage() {
         </div>
       )}
 
-      {/* ── 4b. Recurring / Fixed Expenses ── */}
-      <div className="rounded-2xl border border-[#2d3348] bg-[#1e2235] p-5 shadow-card space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#252a3e] text-[#4f8ef7]">
-              <Repeat className="h-4 w-4" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#94a3b8]">Recurring Fixed Expenses</h4>
-              <p className="mt-0.5 text-xs text-[#64748b]">Rent, EMIs, subscriptions — auto-deducted on schedule</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setShowRecurringModal(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-[#4f8ef7] hover:text-[#6c63ff] transition-colors"
-          >
-            Manage
-          </button>
-        </div>
-
-        {recurringLoading ? (
-          <div className="py-6 text-center text-xs text-[#64748b]">Loading recurring expenses…</div>
-        ) : recurringExpenses.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-[#2d3348] bg-[#151827] p-6 text-center text-xs text-[#94a3b8]">
-            No recurring expenses configured yet.{" "}
-            <button onClick={() => setShowRecurringModal(true)} className="font-semibold text-[#4f8ef7] hover:underline">
-              Add one
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {recurringExpenses.slice(0, 4).map((item) => (
-              <div
-                key={item.id}
-                className={`flex items-center justify-between rounded-xl border border-[#2d3348] bg-[#151827] p-3 ${item.is_active ? "" : "opacity-50"
-                  }`}
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold text-[#f1f5f9]">{item.title}</p>
-                  <p className="mt-0.5 text-[11px] text-[#64748b] capitalize">
-                    {item.frequency} · Next {new Date(item.next_deduction_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                  </p>
-                </div>
-                <p className="shrink-0 pl-2 text-sm font-bold text-[#f1f5f9]">{formatINR(item.amount)}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       {/* ── 5. Financial Goals with Forecasting & Priority ── */}
       <div className="rounded-2xl border border-[#2d3348] bg-[#1e2235] p-5 shadow-card space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -858,17 +785,6 @@ export default function OverviewPage() {
         />
       )}
 
-      {showRecurringModal && currentUser && (
-        <RecurringExpensesModal
-          userId={currentUser.id}
-          items={recurringExpenses}
-          onClose={() => setShowRecurringModal(false)}
-          onChanged={() => {
-            void fetchRecurringExpenses();
-            void fetchStatus();
-          }}
-        />
-      )}
     </div>
   );
 }
