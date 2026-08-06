@@ -16,6 +16,7 @@ import { INVESTMENT_TYPES, METAL_TYPES, PROPERTY_TYPES, isPreciousMetal, isPrope
 interface InvestmentModalProps {
     userId: number;
     editingItem?: Investment | null;
+    isPastMode?: boolean;
     onClose: () => void;
     onSaved: () => void; // re-fetch parent's list after create/update
 }
@@ -31,8 +32,9 @@ const emptyForm = {
     comment: "",
 };
 
-export default function InvestmentModal({ userId, editingItem, onClose, onSaved }: InvestmentModalProps) {
+export default function InvestmentModal({ userId, editingItem, isPastMode, onClose, onSaved }: InvestmentModalProps) {
     const isEditing = !!editingItem;
+    const isPast = editingItem ? !!editingItem.is_past : !!isPastMode;
 
     const [form, setForm] = useState(
         editingItem
@@ -89,6 +91,7 @@ export default function InvestmentModal({ userId, editingItem, onClose, onSaved 
                 quantity: quantityNum,
                 investment_date: form.investment_date,
                 comment: form.comment.trim() || undefined,
+                is_past: isPast,
             };
 
             if (isEditing && editingItem) {
@@ -113,9 +116,11 @@ export default function InvestmentModal({ userId, editingItem, onClose, onSaved 
                             <TrendingUp className="h-4 w-4" />
                         </div>
                         <div>
-                            <h4 className="text-sm font-bold text-[#f1f5f9]">{isEditing ? "Edit Investment" : "Add New Investment"}</h4>
+                            <h4 className="text-sm font-bold text-[#f1f5f9]">
+                                {isPast ? (isEditing ? "Edit Past Investment" : "Add Past Investment") : (isEditing ? "Edit Investment" : "Add New Investment")}
+                            </h4>
                             <p className="text-[11px] text-[#64748b]">
-                                {isEditing ? "Adjusts Liquid Assets by the amount difference" : "Auto-deducted from your Liquid Assets"}
+                                {isPast ? "Does not deduct from your Liquid Assets" : isEditing ? "Adjusts Liquid Assets by the amount difference" : "Auto-deducted from your Liquid Assets"}
                             </p>
                         </div>
                     </div>

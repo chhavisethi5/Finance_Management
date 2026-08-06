@@ -257,7 +257,7 @@ export default function BudgetPlannerPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6 animate-slide-up">
       {/* Page header */}
       <div>
         <h3 className="text-xl font-bold text-[#f1f5f9]">Budget Planner</h3>

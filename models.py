@@ -215,6 +215,7 @@ class Investment(Base):
     quantity = Column(Numeric(12, 3), nullable=True)
     investment_date = Column("date", Date, nullable=False)
     comment = Column(String(255), nullable=True)
+    is_past = Column(Boolean, nullable=False, default=False)
 
     user = relationship("User", back_populates="investments")
 

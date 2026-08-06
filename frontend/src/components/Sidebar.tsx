@@ -34,8 +34,10 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onClo
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    logout();
     navigate("/");
+    setTimeout(() => {
+      logout();
+    }, 100);
   };
 
   return (

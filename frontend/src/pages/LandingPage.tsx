@@ -53,6 +53,13 @@ const FEATURES = [
         accent: "from-[#fbbf24] to-[#d97706]",
     },
     {
+        icon: TrendingUp,
+        title: "Investments Portfolio Tracker",
+        description:
+            "Log and track your portfolio across property, precious metals, stocks, and mutual funds, with a clear history view.",
+        accent: "from-[#ec4899] to-[#be185d]",
+    },
+    {
         icon: Sparkles,
         title: "Automated Insights",
         description:
@@ -66,25 +73,25 @@ const STEPS = [
         icon: UserPlus,
         label: "Step 1",
         title: "Sign Up & Set Income",
-        description: "Create your account and tell MoneyMap what you earn each month.",
+        description: "Create your account and define your recurring monthly income.",
     },
     {
         icon: SlidersHorizontal,
         label: "Step 2",
-        title: "Choose or Customize Budget Plan",
-        description: "Pick a ready-made budget tier or fine-tune your own category splits.",
+        title: "Choose Budget Split",
+        description: "Pick a standard or customized allocation rule for your needs and wants.",
     },
     {
         icon: ListChecks,
         label: "Step 3",
-        title: "Log Transactions & Track Goals",
-        description: "Record income and expenses as they happen and watch goals fill in.",
+        title: "Map Assets & Track Investments",
+        description: "Log past portfolios and new investments to map your liquid assets accurately.",
     },
     {
         icon: Rocket,
         label: "Step 4",
-        title: "Achieve Financial Freedom",
-        description: "Follow automated insights that turn spending data into real progress.",
+        title: "Grow Your Wealth",
+        description: "Analyze combined asset metrics and execute goals using automated savings insights.",
     },
 ];
 

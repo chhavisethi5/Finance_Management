@@ -13,7 +13,6 @@ import { getInvestments, deleteInvestment, formatINR, getErrorMessage } from "..
 import type { Investment, InvestmentType } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { INVESTMENT_TYPES } from "../constants/investmentTypes";
-import InvestmentProfileCard from "../components/InvestmentProfileCard";
 import InvestmentModal from "../components/InvestmentModal";
 
 export default function InvestmentsPage() {
@@ -28,6 +27,7 @@ export default function InvestmentsPage() {
     const [typeFilter, setTypeFilter] = useState<InvestmentType | "All">("All");
 
     const [showAddModal, setShowAddModal] = useState(false);
+    const [isPastMode, setIsPastMode] = useState(false);
     const [editingItem, setEditingItem] = useState<Investment | null>(null);
 
     const fetchInvestments = useCallback(async () => {
@@ -55,7 +55,9 @@ export default function InvestmentsPage() {
 
     const handleDelete = async (item: Investment) => {
         const confirmed = window.confirm(
-            `Delete this ${item.investment_type} investment of ${formatINR(Number(item.amount))}? This refunds the amount back into your Liquid Assets and can't be undone.`
+            item.is_past
+                ? `Delete this past ${item.investment_type} investment of ${formatINR(Number(item.amount))}? This cannot be undone.`
+                : `Delete this ${item.investment_type} investment of ${formatINR(Number(item.amount))}? This refunds the amount back into your Liquid Assets and can't be undone.`
         );
         if (!confirmed) return;
 
@@ -76,24 +78,36 @@ export default function InvestmentsPage() {
     if (!currentUser) return null;
 
     return (
-        <div className="max-w-5xl mx-auto space-y-6">
+        <div className="max-w-5xl mx-auto space-y-6 animate-slide-up">
             {/* Page header */}
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                     <h3 className="text-xl font-bold text-[#f1f5f9]">Investments</h3>
                     <p className="text-sm text-[#475569] mt-0.5">Track your portfolio across property, metals, and funds.</p>
                 </div>
-                <button
-                    onClick={() => setShowAddModal(true)}
-                    className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#4f8ef7] to-[#6c63ff] px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:opacity-95 transition-opacity"
-                >
-                    <Plus className="h-4 w-4" />
-                    Add New Investment
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => {
+                            setIsPastMode(true);
+                            setShowAddModal(true);
+                        }}
+                        className="flex items-center gap-2 rounded-xl border border-[#2d3348] bg-[#1a1d27] px-4 py-2.5 text-sm font-semibold text-[#f1f5f9] hover:bg-[#22263a] hover:border-[#4f8ef7]/50 hover:text-[#4f8ef7] transition-all shadow-md"
+                    >
+                        <Plus className="h-4 w-4" />
+                        Add Past Investments
+                    </button>
+                    <button
+                        onClick={() => {
+                            setIsPastMode(false);
+                            setShowAddModal(true);
+                        }}
+                        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#4f8ef7] to-[#6c63ff] px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:opacity-95 transition-opacity"
+                    >
+                        <Plus className="h-4 w-4" />
+                        Add New Investment
+                    </button>
+                </div>
             </div>
-
-            {/* ── Initial Past Investments Setup ── */}
-            <InvestmentProfileCard userId={currentUser.id} />
 
             {error && (
                 <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">{error}</div>
@@ -168,9 +182,16 @@ export default function InvestmentsPage() {
                                     <tr key={item.id} className="border-b border-[#2d3348] last:border-0 hover:bg-[#22263a] transition-colors">
                                         <td className="py-3 text-[#94a3b8]">{item.investment_date}</td>
                                         <td className="py-3">
-                                            <span className="inline-flex items-center gap-1 rounded-full bg-[#4f8ef7]/10 px-2 py-0.5 text-xs font-semibold text-[#4f8ef7]">
-                                                {item.investment_type}
-                                            </span>
+                                            <div className="flex flex-col items-start gap-1">
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-[#4f8ef7]/10 px-2 py-0.5 text-xs font-semibold text-[#4f8ef7]">
+                                                    {item.investment_type}
+                                                </span>
+                                                {item.is_past && (
+                                                    <span className="text-[10px] text-[#fbbf24] font-medium px-1 bg-[#fbbf24]/10 rounded border border-[#fbbf24]/20">
+                                                        Past Portfolio
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="py-3 text-[#94a3b8]">
                                             {item.sub_type ? (
@@ -224,6 +245,7 @@ export default function InvestmentsPage() {
             {showAddModal && (
                 <InvestmentModal
                     userId={currentUser.id}
+                    isPastMode={isPastMode}
                     onClose={() => setShowAddModal(false)}
                     onSaved={() => {
                         setShowAddModal(false);

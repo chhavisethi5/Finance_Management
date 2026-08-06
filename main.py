@@ -707,6 +707,7 @@ def _serialize_investment(item: models.Investment) -> schemas.InvestmentResponse
         quantity=item.quantity,
         investment_date=item.investment_date,
         comment=item.comment,
+        is_past=item.is_past,
     )
 
 
@@ -730,12 +731,14 @@ def create_investment(payload: schemas.InvestmentCreate, db: Session = Depends(g
         quantity=payload.quantity,
         investment_date=payload.investment_date,
         comment=payload.comment.strip() if payload.comment else None,
+        is_past=payload.is_past,
     )
     db.add(item)
 
-    # Auto-deduction: Liquid Assets is derived from manual_savings_offset
-    # (see /budget-status), so subtracting here immediately reduces it.
-    db_user.manual_savings_offset = (db_user.manual_savings_offset - payload.amount).quantize(Decimal("0.01"))
+    # Auto-deduction: Liquid Assets is derived from manual_savings_offset,
+    # so subtracting here immediately reduces it. Do NOT deduct for past investments.
+    if not payload.is_past:
+        db_user.manual_savings_offset = (db_user.manual_savings_offset - payload.amount).quantize(Decimal("0.01"))
 
     db.commit()
     db.refresh(item)
@@ -795,12 +798,22 @@ def update_investment(investment_id: int, update: schemas.InvestmentUpdate, db: 
     if "comment" in update_data and update_data["comment"] is not None:
         update_data["comment"] = update_data["comment"].strip() or None
 
-    # If the invested amount changed, apply just the delta to manual_savings_offset
-    # so Liquid Assets ends up exactly where it would if this had been entered correctly.
-    if "amount" in update_data and update_data["amount"] != item.amount:
-        db_user = db.query(models.User).filter(models.User.id == item.user_id).first()
-        delta = update_data["amount"] - item.amount  # positive => invested more => deduct more
-        db_user.manual_savings_offset = (db_user.manual_savings_offset - delta).quantize(Decimal("0.01"))
+    old_is_past = item.is_past
+    new_is_past = update_data.get("is_past", old_is_past)
+    old_amount = item.amount
+    new_amount = update_data.get("amount", old_amount)
+
+    db_user = db.query(models.User).filter(models.User.id == item.user_id).first()
+    if db_user:
+        # Re-computing liquid asset adjustment based on change in is_past and amount:
+        if not old_is_past and not new_is_past:
+            if new_amount != old_amount:
+                delta = new_amount - old_amount
+                db_user.manual_savings_offset = (db_user.manual_savings_offset - delta).quantize(Decimal("0.01"))
+        elif not old_is_past and new_is_past:
+            db_user.manual_savings_offset = (db_user.manual_savings_offset + old_amount).quantize(Decimal("0.01"))
+        elif old_is_past and not new_is_past:
+            db_user.manual_savings_offset = (db_user.manual_savings_offset - new_amount).quantize(Decimal("0.01"))
 
     for field, value in update_data.items():
         setattr(item, field, value)
@@ -821,9 +834,11 @@ def delete_investment(investment_id: int, db: Session = Depends(get_db)):
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Investment {investment_id} not found")
 
-    db_user = db.query(models.User).filter(models.User.id == item.user_id).first()
-    if db_user:
-        db_user.manual_savings_offset = (db_user.manual_savings_offset + item.amount).quantize(Decimal("0.01"))
+    # Only refund if it was NOT a past investment
+    if not item.is_past:
+        db_user = db.query(models.User).filter(models.User.id == item.user_id).first()
+        if db_user:
+            db_user.manual_savings_offset = (db_user.manual_savings_offset + item.amount).quantize(Decimal("0.01"))
 
     db.delete(item)
     db.commit()

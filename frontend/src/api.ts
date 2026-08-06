@@ -237,6 +237,7 @@ export interface Investment {
   quantity: number | null;
   investment_date: string;
   comment: string | null;
+  is_past?: boolean;
 }
 
 export interface InvestmentCreatePayload {
@@ -247,6 +248,7 @@ export interface InvestmentCreatePayload {
   quantity?: number;
   investment_date: string;
   comment?: string;
+  is_past?: boolean;
 }
 
 /** Partial update payload for PUT /investments/{id} — every field optional. */
@@ -257,6 +259,7 @@ export interface InvestmentUpdatePayload {
   quantity?: number;
   investment_date?: string;
   comment?: string | null;
+  is_past?: boolean;
 }
 
 export interface PropertyItem {

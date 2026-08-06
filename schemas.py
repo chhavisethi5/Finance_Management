@@ -504,6 +504,7 @@ class InvestmentBase(BaseModel):
     quantity: Decimal | None = Field(None, ge=0, max_digits=12, decimal_places=3)
     investment_date: date
     comment: str | None = Field(None, max_length=255)
+    is_past: bool = False
 
     @model_validator(mode="after")
     def _validate_type_specific_fields(self):
@@ -529,6 +530,7 @@ class InvestmentUpdate(BaseModel):
     quantity: Decimal | None = Field(None, ge=0, max_digits=12, decimal_places=3)
     investment_date: date | None = None
     comment: str | None = Field(None, max_length=255)
+    is_past: bool | None = None
 
 
 class InvestmentResponse(InvestmentBase):
