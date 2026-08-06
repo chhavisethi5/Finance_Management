@@ -149,7 +149,8 @@ export default function TransactionsPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 animate-slide-up">
+    <>
+      <div className="max-w-5xl mx-auto space-y-6 animate-slide-up">
       {/* Page header */}
       <div>
         <h3 className="text-xl font-bold text-[#f1f5f9]">Transactions</h3>
@@ -397,6 +398,7 @@ export default function TransactionsPage() {
           )}
         </div>
       </div>
+    </div>
 
       {editingTx && (
         <EditTransactionModal
@@ -417,6 +419,6 @@ export default function TransactionsPage() {
           }}
         />
       )}
-    </div>
+    </>
   );
 }

@@ -270,7 +270,8 @@ export default function OverviewPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-8 animate-slide-up">
+    <>
+      <div className="space-y-6 max-w-6xl mx-auto pb-8 animate-slide-up">
       {/* ── Page Header ── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -642,6 +643,7 @@ export default function OverviewPage() {
           </div>
         )}
       </div>
+    </div>
 
       {/* ── Goal Creation Modal ── */}
       {showGoalModal && (
@@ -784,7 +786,6 @@ export default function OverviewPage() {
           onSaved={handleSavingsOffsetSaved}
         />
       )}
-
-    </div>
+    </>
   );
 }

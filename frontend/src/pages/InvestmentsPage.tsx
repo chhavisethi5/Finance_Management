@@ -78,7 +78,8 @@ export default function InvestmentsPage() {
     if (!currentUser) return null;
 
     return (
-        <div className="max-w-5xl mx-auto space-y-6 animate-slide-up">
+        <>
+            <div className="max-w-5xl mx-auto space-y-6 animate-slide-up">
             {/* Page header */}
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
@@ -241,30 +242,31 @@ export default function InvestmentsPage() {
                     </div>
                 )}
             </div>
-
-            {showAddModal && (
-                <InvestmentModal
-                    userId={currentUser.id}
-                    isPastMode={isPastMode}
-                    onClose={() => setShowAddModal(false)}
-                    onSaved={() => {
-                        setShowAddModal(false);
-                        void fetchInvestments();
-                    }}
-                />
-            )}
-
-            {editingItem && (
-                <InvestmentModal
-                    userId={currentUser.id}
-                    editingItem={editingItem}
-                    onClose={() => setEditingItem(null)}
-                    onSaved={() => {
-                        setEditingItem(null);
-                        void fetchInvestments();
-                    }}
-                />
-            )}
         </div>
-    );
+
+        {showAddModal && (
+            <InvestmentModal
+                userId={currentUser.id}
+                isPastMode={isPastMode}
+                onClose={() => setShowAddModal(false)}
+                onSaved={() => {
+                    setShowAddModal(false);
+                    void fetchInvestments();
+                }}
+            />
+        )}
+
+        {editingItem && (
+            <InvestmentModal
+                userId={currentUser.id}
+                editingItem={editingItem}
+                onClose={() => setEditingItem(null)}
+                onSaved={() => {
+                    setEditingItem(null);
+                    void fetchInvestments();
+                }}
+            />
+        )}
+    </>
+);
 }

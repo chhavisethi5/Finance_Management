@@ -74,7 +74,8 @@ export default function TransactionHistoryPage() {
         .reduce((sum, t) => sum + Number(t.amount), 0);
 
     return (
-        <div className="max-w-5xl mx-auto space-y-6 animate-slide-up">
+        <>
+            <div className="max-w-5xl mx-auto space-y-6 animate-slide-up">
             {/* Page header */}
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
@@ -192,6 +193,7 @@ export default function TransactionHistoryPage() {
                     </div>
                 )}
             </div>
+        </div>
 
             {editingTx && (
                 <EditTransactionModal
@@ -200,6 +202,6 @@ export default function TransactionHistoryPage() {
                     onSaved={handleEditSaved}
                 />
             )}
-        </div>
+        </>
     );
 }
