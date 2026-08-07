@@ -1561,7 +1561,7 @@ def ai_chat(payload: schemas.AIChatRequest, db: Session = Depends(get_db)):
         )
 
     # 2. Verify Gemini API Key
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
@@ -1689,7 +1689,7 @@ def ai_chat(payload: schemas.AIChatRequest, db: Session = Depends(get_db)):
 
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction
@@ -1702,7 +1702,7 @@ def ai_chat(payload: schemas.AIChatRequest, db: Session = Depends(get_db)):
             import google.generativeai as legacy_genai
             legacy_genai.configure(api_key=api_key)
             model = legacy_genai.GenerativeModel(
-                model_name='gemini-1.5-flash',
+                model_name='gemini-2.0-flash',
                 system_instruction=system_instruction
             )
             response = model.generate_content(prompt)
