@@ -486,3 +486,64 @@ body {
 .animate-mesh-3 {
   animation: mesh-drift-3 20s ease-in-out infinite;
 }
+
+@keyframes float-1 {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(0.5deg);
+  }
+}
+
+@keyframes float-2 {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-12px) rotate(-1deg);
+  }
+}
+
+@keyframes float-3 {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(0.8deg);
+  }
+}
+
+@keyframes float-4 {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(-0.5deg);
+  }
+}
+
+@keyframes progress-bar-stripes {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 16px 0;
+  }
+}
+
+.animate-float-card-1 {
+  animation: float-1 5s ease-in-out infinite;
+}
+
+.animate-float-card-2 {
+  animation: float-2 6s ease-in-out infinite;
+}
+
+.animate-float-card-3 {
+  animation: float-3 5.5s ease-in-out infinite;
+}
+
+.animate-float-card-4 {
+  animation: float-4 6.5s ease-in-out infinite;
+}

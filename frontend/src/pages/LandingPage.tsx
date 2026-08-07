@@ -174,11 +174,6 @@ export default function LandingPage() {
     const [expectedReturn, setExpectedReturn] = useState(12);
     const [timeHorizon, setTimeHorizon] = useState(10);
 
-    // ── 3D Dashboard Mockup States ──
-    const mockupRef = useRef<HTMLDivElement>(null);
-    const [rotateX, setRotateX] = useState(0);
-    const [rotateY, setRotateY] = useState(0);
-    const [mockTimeframe, setMockTimeframe] = useState<"1M" | "6M" | "1Y">("6M");
 
     // ── Feature Spotlight States ──
     const [activeTab, setActiveTab] = useState(0);
@@ -251,51 +246,6 @@ export default function LandingPage() {
         "Interest Earned": 0,
     };
 
-    // ── Simulated Mockup Chart Data ──
-    const getMockupChartData = () => {
-        switch (mockTimeframe) {
-            case "1M":
-                return [
-                    { name: "Wk 1", value: 785000 },
-                    { name: "Wk 2", value: 799000 },
-                    { name: "Wk 3", value: 818000 },
-                    { name: "Wk 4", value: 845200 },
-                ];
-            case "1Y":
-                return [
-                    { name: "Aug '25", value: 510000 },
-                    { name: "Nov '25", value: 600000 },
-                    { name: "Feb '26", value: 690000 },
-                    { name: "May '26", value: 770000 },
-                    { name: "Aug '26", value: 845200 },
-                ];
-            case "6M":
-            default:
-                return [
-                    { name: "Mar", value: 680000 },
-                    { name: "Apr", value: 715000 },
-                    { name: "May", value: 752000 },
-                    { name: "Jun", value: 801000 },
-                    { name: "Jul", value: 845200 },
-                ];
-        }
-    };
-
-    // ── Mouse Move for 3D Tilt Mockup ──
-    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!mockupRef.current) return;
-        const rect = mockupRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left - rect.width / 2;
-        const y = e.clientY - rect.top - rect.height / 2;
-        // Limit tilt to max 8 degrees
-        setRotateX(-(y / (rect.height / 2)) * 8);
-        setRotateY((x / (rect.width / 2)) * 8);
-    };
-
-    const handleMouseLeave = () => {
-        setRotateX(0);
-        setRotateY(0);
-    };
 
     return (
         <div className="relative min-h-screen overflow-x-hidden bg-[#0f1117] text-[#f1f5f9]">
@@ -371,132 +321,112 @@ export default function LandingPage() {
                     </div>
                 </div>
 
-                {/* ── Interactive 3D Perspective Dashboard Mockup Container ── */}
+                {/* ── Dynamic Grid of Staggered Glassmorphism Cards ── */}
                 <div className="relative z-10 flex items-center justify-center lg:block">
-                    <div className="perspective-1000 w-full max-w-xl">
-                        <div
-                            ref={mockupRef}
-                            onMouseMove={handleMouseMove}
-                            onMouseLeave={handleMouseLeave}
-                            style={{
-                                transform: `rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.01, 1.01, 1.01)`,
-                                transition: "transform 0.15s cubic-bezier(0.25, 1, 0.5, 1)",
-                            }}
-                            className="preserve-3d border border-[#2d3348]/80 bg-[#1e2235]/90 rounded-2xl p-5 shadow-2xl shadow-black/60 relative overflow-hidden backdrop-blur-md"
-                        >
-                            {/* Glassmorphism ambient sheen */}
-                            <div className="absolute -inset-y-12 -inset-x-6 bg-gradient-to-r from-transparent via-white/5 to-transparent -rotate-12 translate-x-1/2 pointer-events-none" />
-
-                            {/* Mock Header */}
-                            <div className="flex items-center justify-between border-b border-[#2d3348]/60 pb-3.5 mb-4 text-xs">
-                                <div className="flex items-center gap-2">
-                                    <span className="h-2.5 w-2.5 rounded-full bg-[#f87171]" />
-                                    <span className="h-2.5 w-2.5 rounded-full bg-[#fbbf24]" />
-                                    <span className="h-2.5 w-2.5 rounded-full bg-[#34d399]" />
-                                    <span className="ml-2 font-semibold text-[#94a3b8]">MoneyMap Studio v1.2</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-xl lg:max-w-2xl mx-auto">
+                        
+                        {/* Card 1: Net Worth Overview */}
+                        <div className="animate-float-card-1 backdrop-blur-md bg-[#1e2235]/40 border border-[#2d3348]/60 p-5 rounded-2xl shadow-lg shadow-black/20 hover:border-[#4f8ef7]/50 hover:shadow-[#4f8ef7]/10 transition-all duration-300 transform hover:scale-[1.02] flex flex-col justify-between min-h-[145px]">
+                            <div>
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider">Net Worth</span>
+                                    <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                        <span className="relative flex h-1.5 w-1.5">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                        </span>
+                                        <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest">Live</span>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-1.5 rounded-lg bg-[#0f1117] p-0.5 border border-[#2d3348]/40">
-                                    {(["1M", "6M", "1Y"] as const).map((t) => (
-                                        <button
-                                            key={t}
-                                            onClick={() => setMockTimeframe(t)}
-                                            className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${
-                                                mockTimeframe === t
-                                                    ? "bg-[#4f8ef7] text-white"
-                                                    : "text-[#475569] hover:text-[#94a3b8]"
-                                            }`}
-                                        >
-                                            {t}
-                                        </button>
-                                    ))}
-                                </div>
+                                <div className="text-2xl font-bold text-white tracking-tight">₹8,45,200</div>
                             </div>
+                            <div className="mt-2 text-xs font-semibold bg-gradient-to-r from-emerald-400 to-[#34d399] bg-clip-text text-transparent flex items-center gap-1">
+                                <TrendingUp size={12} className="text-emerald-400" />
+                                <span>+12.4% this month</span>
+                            </div>
+                        </div>
 
-                            {/* Mock Sidebar + Main Content Grid */}
-                            <div className="grid grid-cols-12 gap-3.5">
-                                {/* Mini Sidebar Mock */}
-                                <div className="col-span-2 flex flex-col gap-3.5 border-r border-[#2d3348]/40 pr-3 text-[#475569]">
-                                    <div className="h-7 w-7 rounded-lg bg-[#4f8ef7]/10 flex items-center justify-center text-[#4f8ef7]">
-                                        <Wallet size={15} />
+                        {/* Card 2: Investments / Asset Breakdown */}
+                        <div className="animate-float-card-2 lg:translate-y-6 backdrop-blur-md bg-[#1e2235]/40 border border-[#2d3348]/60 p-5 rounded-2xl shadow-lg shadow-black/20 hover:border-[#a78bfa]/50 hover:shadow-[#a78bfa]/10 transition-all duration-300 transform hover:scale-[1.02] flex flex-col justify-between min-h-[145px]">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider">Asset Distribution</span>
+                                <Briefcase size={14} className="text-[#a78bfa]" />
+                            </div>
+                            <div className="flex flex-col gap-2">
+                                <div>
+                                    <div className="flex justify-between text-[10px] mb-0.5">
+                                        <span className="text-white/90 font-medium">Stocks</span>
+                                        <span className="text-[#a78bfa] font-bold">55%</span>
                                     </div>
-                                    <div className="h-7 w-7 rounded-lg bg-[#1a1d27] flex items-center justify-center">
-                                        <TrendingUp size={15} />
-                                    </div>
-                                    <div className="h-7 w-7 rounded-lg bg-[#1a1d27] flex items-center justify-center">
-                                        <Target size={15} />
-                                    </div>
-                                    <div className="h-7 w-7 rounded-lg bg-[#1a1d27] flex items-center justify-center">
-                                        <Calendar size={15} />
+                                    <div className="h-1 w-full bg-[#0f1117] rounded-full overflow-hidden">
+                                        <div className="h-full w-[55%] bg-gradient-to-r from-[#4f8ef7] to-[#6c63ff] rounded-full" />
                                     </div>
                                 </div>
-
-                                {/* Mock Content Area */}
-                                <div className="col-span-10 flex flex-col gap-3.5">
-                                    {/* Widgets Grid */}
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="bg-[#0f1117]/80 rounded-xl border border-[#2d3348]/60 p-3 shadow-sm">
-                                            <span className="text-[10px] text-[#94a3b8] uppercase tracking-wider">Net Worth</span>
-                                            <div className="text-base font-bold text-white mt-0.5">₹8,45,200</div>
-                                            <div className="text-[9px] text-[#34d399] flex items-center gap-0.5 mt-0.5 font-medium">
-                                                <TrendingUp size={10} /> +12.4% this month
-                                            </div>
-                                        </div>
-                                        <div className="bg-[#0f1117]/80 rounded-xl border border-[#2d3348]/60 p-3 shadow-sm">
-                                            <span className="text-[10px] text-[#94a3b8] uppercase tracking-wider">Investments</span>
-                                            <div className="text-base font-bold text-[#a78bfa] mt-0.5">₹6,35,200</div>
-                                            <div className="text-[9px] text-[#a78bfa]/80 flex items-center gap-0.5 mt-0.5">
-                                                Active Portfolio
-                                            </div>
-                                        </div>
+                                <div>
+                                    <div className="flex justify-between text-[10px] mb-0.5">
+                                        <span className="text-white/90 font-medium">Mutual Funds</span>
+                                        <span className="text-[#a78bfa] font-bold">25%</span>
                                     </div>
-
-                                    {/* Mock Chart displaying live selectable timeframe */}
-                                    <div className="bg-[#0f1117]/80 rounded-xl border border-[#2d3348]/60 p-3 flex-1 flex flex-col min-h-[140px]">
-                                        <span className="text-[10px] text-[#94a3b8] font-medium mb-1">Asset Value Over Time</span>
-                                        <div className="w-full flex-1">
-                                            <ResponsiveContainer width="100%" height={110}>
-                                                <AreaChart data={getMockupChartData()}>
-                                                    <defs>
-                                                        <linearGradient id="mockupChartGrad" x1="0" y1="0" x2="0" y2="1">
-                                                            <stop offset="5%" stopColor="#4f8ef7" stopOpacity={0.25} />
-                                                            <stop offset="95%" stopColor="#4f8ef7" stopOpacity={0.0} />
-                                                        </linearGradient>
-                                                    </defs>
-                                                    <Tooltip
-                                                        contentStyle={{
-                                                            background: "#1e2235",
-                                                            border: "1px solid #2d3348",
-                                                            borderRadius: "6px",
-                                                            fontSize: "10px",
-                                                        }}
-                                                        formatter={(value: any) => [formatINR(Number(value)), "Value"]}
-                                                    />
-                                                    <Area
-                                                        type="monotone"
-                                                        dataKey="value"
-                                                        stroke="#4f8ef7"
-                                                        strokeWidth={2}
-                                                        fillOpacity={1}
-                                                        fill="url(#mockupChartGrad)"
-                                                    />
-                                                </AreaChart>
-                                            </ResponsiveContainer>
-                                        </div>
+                                    <div className="h-1 w-full bg-[#0f1117] rounded-full overflow-hidden">
+                                        <div className="h-full w-[25%] bg-gradient-to-r from-[#a78bfa] to-[#ec4899] rounded-full" />
                                     </div>
-
-                                    {/* Mock Goal Progress */}
-                                    <div className="bg-[#0f1117]/80 rounded-xl border border-[#2d3348]/60 p-3">
-                                        <div className="flex items-center justify-between text-[10px] text-[#94a3b8] mb-1">
-                                            <span>Emergency Fund Target</span>
-                                            <span className="font-semibold text-white">68% Achieved</span>
-                                        </div>
-                                        <div className="h-1.5 w-full bg-[#1e2235] rounded-full overflow-hidden">
-                                            <div className="h-full w-[68%] rounded-full bg-gradient-to-r from-[#34d399] to-[#059669]" />
-                                        </div>
+                                </div>
+                                <div>
+                                    <div className="flex justify-between text-[10px] mb-0.5">
+                                        <span className="text-white/90 font-medium">Gold & Others</span>
+                                        <span className="text-[#a78bfa] font-bold">20%</span>
+                                    </div>
+                                    <div className="h-1 w-full bg-[#0f1117] rounded-full overflow-hidden">
+                                        <div className="h-full w-[20%] bg-gradient-to-r from-[#fbbf24] to-[#d97706] rounded-full" />
                                     </div>
                                 </div>
                             </div>
                         </div>
+
+                        {/* Card 3: MoneyMap AI Assistant */}
+                        <div className="animate-float-card-3 lg:-translate-y-4 backdrop-blur-md bg-[#1e2235]/50 border border-purple-500/30 p-5 rounded-2xl shadow-xl shadow-purple-500/5 hover:border-purple-400 hover:shadow-purple-500/10 transition-all duration-300 transform hover:scale-[1.02] ring-1 ring-purple-500/20 flex flex-col justify-between min-h-[145px]">
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-1.5">
+                                    <div className="h-4.5 w-4.5 rounded bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center text-white text-[9px] font-bold p-0.5">
+                                        AI
+                                    </div>
+                                    <span className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider">AI Assistant</span>
+                                </div>
+                                <div className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-pulse" />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                                <div className="bg-[#0f1117] text-white p-2 rounded-xl rounded-tr-none text-[10px] leading-relaxed border border-[#2d3348]/40 self-end max-w-[95%]">
+                                    "Based on my liquid assets and investments, how close am I to my goals?"
+                                </div>
+                                <div className="bg-purple-950/20 text-purple-200 p-2 rounded-xl rounded-tl-none text-[10px] leading-relaxed border border-purple-500/20 self-start max-w-[95%]">
+                                    💡 <span className="font-semibold text-white">Suggestion:</span> You are on track to hit your ₹5L emergency target by December!
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Card 4: Savings & Budget Target */}
+                        <div className="animate-float-card-4 lg:translate-y-2 backdrop-blur-md bg-[#1e2235]/40 border border-[#2d3348]/60 p-5 rounded-2xl shadow-lg shadow-black/20 hover:border-[#34d399]/50 hover:shadow-[#34d399]/10 transition-all duration-300 transform hover:scale-[1.02] flex flex-col justify-between min-h-[145px]">
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider">Savings Target</span>
+                                <Target size={14} className="text-[#34d399]" />
+                            </div>
+                            <div>
+                                <div className="flex justify-between items-baseline mb-1">
+                                    <span className="text-xs font-semibold text-white">Emergency Fund</span>
+                                    <span className="text-xs font-bold text-[#34d399]">75%</span>
+                                </div>
+                                <div className="h-2 w-full bg-[#0f1117] rounded-full overflow-hidden relative">
+                                    <div className="h-full w-[75%] bg-gradient-to-r from-[#34d399] to-[#059669] rounded-full relative overflow-hidden">
+                                        <div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.15)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.15)_50%,rgba(255,255,255,0.15)_75%,transparent_75%,transparent)] bg-[length:16px_16px] animate-[progress-bar-stripes_1s_linear_infinite]" />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex justify-between text-[9px] text-[#94a3b8] mt-2">
+                                <span>₹1,50,000 / ₹2,00,000</span>
+                                <span className="text-[#34d399] font-semibold">On Track</span>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </section>
