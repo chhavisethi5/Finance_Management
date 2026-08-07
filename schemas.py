@@ -568,3 +568,16 @@ class InvestmentProfileResponse(InvestmentProfileUpdate):
 
     class Config:
         from_attributes = True
+
+
+# ---------------------------------------------------------------------------
+# AI Advisor Schemas
+# ---------------------------------------------------------------------------
+
+class AIChatRequest(BaseModel):
+    user_id: int
+    message: str
+
+
+class AIChatResponse(BaseModel):
+    response: str

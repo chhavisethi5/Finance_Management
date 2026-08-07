@@ -14,6 +14,7 @@ import TransactionsPage from "./pages/TransactionsPage";
 import TransactionHistoryPage from "./pages/TransactionHistoryPage";
 import BudgetPlannerPage from "./pages/BudgetPlannerPage";
 import InvestmentsPage from "./pages/InvestmentsPage";
+import AIAdvisorPage from "./pages/AIAdvisorPage";
 
 export default function App() {
   return (
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="history" element={<TransactionHistoryPage />} />
         <Route path="investments" element={<InvestmentsPage />} />
         <Route path="budget-planner" element={<BudgetPlannerPage />} />
+        <Route path="ai-advisor" element={<AIAdvisorPage />} />
       </Route>
 
       {/* Catch-all → landing page */}

@@ -738,7 +738,7 @@ def create_investment(payload: schemas.InvestmentCreate, db: Session = Depends(g
     # Auto-deduction: Liquid Assets is derived from manual_savings_offset,
     # so subtracting here immediately reduces it. Do NOT deduct for past investments.
     if not payload.is_past:
-        db_user.manual_savings_offset = (db_user.manual_savings_offset - payload.amount).quantize(Decimal("0.01"))
+        db_user.manual_savings_offset = (Decimal(str(db_user.manual_savings_offset)) - payload.amount).quantize(Decimal("0.01"))
 
     db.commit()
     db.refresh(item)
@@ -809,11 +809,11 @@ def update_investment(investment_id: int, update: schemas.InvestmentUpdate, db: 
         if not old_is_past and not new_is_past:
             if new_amount != old_amount:
                 delta = new_amount - old_amount
-                db_user.manual_savings_offset = (db_user.manual_savings_offset - delta).quantize(Decimal("0.01"))
+                db_user.manual_savings_offset = (Decimal(str(db_user.manual_savings_offset)) - delta).quantize(Decimal("0.01"))
         elif not old_is_past and new_is_past:
-            db_user.manual_savings_offset = (db_user.manual_savings_offset + old_amount).quantize(Decimal("0.01"))
+            db_user.manual_savings_offset = (Decimal(str(db_user.manual_savings_offset)) + old_amount).quantize(Decimal("0.01"))
         elif old_is_past and not new_is_past:
-            db_user.manual_savings_offset = (db_user.manual_savings_offset - new_amount).quantize(Decimal("0.01"))
+            db_user.manual_savings_offset = (Decimal(str(db_user.manual_savings_offset)) - new_amount).quantize(Decimal("0.01"))
 
     for field, value in update_data.items():
         setattr(item, field, value)
@@ -838,7 +838,7 @@ def delete_investment(investment_id: int, db: Session = Depends(get_db)):
     if not item.is_past:
         db_user = db.query(models.User).filter(models.User.id == item.user_id).first()
         if db_user:
-            db_user.manual_savings_offset = (db_user.manual_savings_offset + item.amount).quantize(Decimal("0.01"))
+            db_user.manual_savings_offset = (Decimal(str(db_user.manual_savings_offset)) + item.amount).quantize(Decimal("0.01"))
 
     db.delete(item)
     db.commit()
@@ -1298,7 +1298,7 @@ def get_budget_status(user_id: int, db: Session = Depends(get_db)):
     )
     actual_savings = (user_income + extra_income_this_month - total_expenses).quantize(Decimal("0.01"))
     liquid_assets = (
-        db_user.manual_savings_offset
+        Decimal(str(db_user.manual_savings_offset))
         + past_savings
         + (actual_savings if actual_savings > Decimal("0.00") else Decimal("0.00"))
     ).quantize(Decimal("0.01"))
@@ -1539,3 +1539,178 @@ def update_financial_goal(
     db.refresh(db_goal)
 
     return _serialize_financial_goal(db_goal)
+
+
+# ===========================================================================
+# Phase 3 — AI Advisor (Gemini Integration)
+# ===========================================================================
+
+@app.post("/ai/chat", response_model=schemas.AIChatResponse, tags=["AI Advisor"])
+def ai_chat(payload: schemas.AIChatRequest, db: Session = Depends(get_db)):
+    """
+    Integrate an AI Financial Chatbot powered by Google Gemini API.
+    Queries the database to construct a rich, personalized financial profile context,
+    feeds it to the Gemini model with systemcopilot instructions, and returns the response.
+    """
+    # 1. Verify User Exists
+    db_user = db.query(models.User).filter(models.User.id == payload.user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {payload.user_id} not found",
+        )
+
+    # 2. Verify Gemini API Key
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Gemini API Key is not configured on the server. Please set the GEMINI_API_KEY environment variable.",
+        )
+
+    # 3. Retrieve User's Financial Profile
+    # Get budget status (contains liquid assets, budgets, emergency status, insights)
+    try:
+        budget_status = get_budget_status(payload.user_id, db)
+    except HTTPException:
+        budget_status = None
+
+    # Get recent transactions (limit to last 20)
+    txns = (
+        db.query(models.Transaction)
+        .filter(models.Transaction.user_id == payload.user_id)
+        .order_by(models.Transaction.transaction_date.desc(), models.Transaction.id.desc())
+        .limit(20)
+        .all()
+    )
+
+    # Get active goals
+    goals = (
+        db.query(models.FinancialGoal)
+        .filter(models.FinancialGoal.user_id == payload.user_id)
+        .all()
+    )
+    serialized_goals = [_serialize_financial_goal(g) for g in goals]
+
+    # Get investments log
+    investments = (
+        db.query(models.Investment)
+        .filter(models.Investment.user_id == payload.user_id)
+        .all()
+    )
+    serialized_investments = [_serialize_investment(i) for i in investments]
+
+    # Get investment profile summary (pre-existing investments)
+    profile = db.query(models.InvestmentProfile).filter(models.InvestmentProfile.user_id == payload.user_id).first()
+    serialized_profile = _serialize_investment_profile(profile) if profile else None
+
+    # 4. Construct Context Prompt
+    context_lines = []
+    context_lines.append(f"### User Base Profile")
+    context_lines.append(f"- Name: {db_user.name or 'User'}")
+    context_lines.append(f"- Base Monthly Income: ₹{db_user.monthly_income or 0:,.2f}")
+
+    if budget_status:
+        context_lines.append(f"- Active Budget Plan Tier: {budget_status.lifestyle_tier.upper()}")
+        context_lines.append(f"- Needs Target: ₹{budget_status.needs.target:,.2f} | Spent: ₹{budget_status.needs.spent:,.2f} | Remaining: ₹{budget_status.needs.remaining:,.2f} (Over budget: {budget_status.needs.is_over_budget})")
+        context_lines.append(f"- Wants Target: ₹{budget_status.wants.target:,.2f} | Spent: ₹{budget_status.wants.spent:,.2f} | Remaining: ₹{budget_status.wants.remaining:,.2f} (Over budget: {budget_status.wants.is_over_budget})")
+        context_lines.append(f"- Monthly Savings Target: ₹{budget_status.savings_target:,.2f} | Actual Saved: ₹{budget_status.actual_savings:,.2f} | Remaining: ₹{budget_status.savings_remaining:,.2f} (On Track: {budget_status.is_savings_on_track})")
+        context_lines.append(f"- Liquid Assets (Total Savings Rollovers): ₹{budget_status.liquid_assets:,.2f}")
+        context_lines.append(f"- Pre-existing savings offset: ₹{budget_status.manual_savings_offset:,.2f}")
+        context_lines.append(f"- Emergency Fund Status: {budget_status.emergency_fund_status} (Saved: ₹{budget_status.emergency_fund_saved:,.2f} / Target: ₹{budget_status.emergency_fund_target:,.2f}, Remaining: ₹{budget_status.emergency_fund_remaining:,.2f})")
+
+        if budget_status.insights:
+            context_lines.append("\n### Automated System Insights:")
+            for insight in budget_status.insights:
+                context_lines.append(f"  - [{insight.type.upper()}] {insight.title}: {insight.description}")
+
+    if serialized_goals:
+        context_lines.append("\n### Active Financial Goals:")
+        for goal in serialized_goals:
+            context_lines.append(
+                f"  - Goal: '{goal.goal_name}' | Target: ₹{goal.target_amount:,.2f} | Current Saved: ₹{goal.current_saved:,.2f} | "
+                f"Progress: {goal.progress_pct}% | Target Date: {goal.target_date} | Priority: {goal.priority} | "
+                f"Status: {goal.status_label} | Pace Needed: ₹{goal.monthly_target:,.2f}/month"
+            )
+    else:
+        context_lines.append("\n### Active Financial Goals:\n  - No goals set yet.")
+
+    # Investments Context
+    context_lines.append("\n### Investment Summary:")
+    if serialized_profile:
+        context_lines.append("  Initial Past Setup (Pre-MoneyMap):")
+        if serialized_profile.properties:
+            props = ", ".join([f"{p.property_type}: ₹{p.amount:,.2f}" for p in serialized_profile.properties])
+            context_lines.append(f"    - Properties: {props}")
+        context_lines.append(
+            f"    - Precious Metals: Gold {serialized_profile.gold_grams}g, Silver {serialized_profile.silver_grams}g, Diamond {serialized_profile.diamond_grams}g, Platinum {serialized_profile.platinum_grams}g\n"
+            f"    - Financial Assets: Stocks: ₹{serialized_profile.stocks_value:,.2f} | Mutual Funds: ₹{serialized_profile.mutual_funds_value:,.2f} | Fixed Deposits: ₹{serialized_profile.bank_fd_value:,.2f} | Post Office: ₹{serialized_profile.post_office_value:,.2f}"
+        )
+    if serialized_investments:
+        context_lines.append("  Logged In-App Investments:")
+        for inv in serialized_investments:
+            is_past_lbl = "Past Asset" if inv.is_past else "Deducted from Liquid Assets"
+            context_lines.append(f"    - {inv.investment_type} ({inv.sub_type or 'General'}): ₹{inv.amount:,.2f} on {inv.investment_date} ({is_past_lbl})")
+    if not serialized_profile and not serialized_investments:
+        context_lines.append("  - No investments recorded.")
+
+    if txns:
+        context_lines.append("\n### Recent Transactions (Last 20):")
+        for txn in txns:
+            comment_lbl = f" | Comment: '{txn.comment}'" if txn.comment else ""
+            context_lines.append(f"  - {txn.transaction_date}: {txn.type.upper()} | {txn.category} | ₹{txn.amount:,.2f}{comment_lbl}")
+    else:
+        context_lines.append("\n### Recent Transactions:\n  - No transactions logged yet.")
+
+    context_str = "\n".join(context_lines)
+
+    system_instruction = (
+        "You are MoneyMap AI, a professional, personalized financial co-pilot and advisor for the 'MoneyMap' personal finance app.\n"
+        "Your objective is to provide intelligent, tailored, actionable, and encouraging financial guidance based ONLY on the user's financial context.\n"
+        "Be direct, conversational, supportive, and extremely clear. "
+        "Suggest solid strategies (e.g. cutting specific discretionary categories, adjusting budget tiers, setting emergency funds, scaling back wants, or pacing savings goals).\n"
+        "Always output currency values in Indian Rupees (e.g. ₹X,XXX.XX or Lakhs/Crores if suitable).\n"
+        "Do not state that you were given a markdown payload or text context. Behave naturally as an advisor who has access to the user's dashboard data.\n"
+        "Reference their actual transactions, budget targets, savings progress, and goals to provide highly specific answers."
+    )
+
+    prompt = (
+        f"Here is the user's current financial context:\n\n"
+        f"{context_str}\n\n"
+        f"User's Question: {payload.message}\n\n"
+        f"Provide your personalized financial advice response:"
+    )
+
+    # 5. Connect to Gemini API using modern Client or legacy Fallback
+    try:
+        # Try Modern official client (google-genai)
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction
+            )
+        )
+        ai_response = response.text
+    except Exception as e:
+        # Try legacy fallback (google-generativeai)
+        try:
+            import google.generativeai as legacy_genai
+            legacy_genai.configure(api_key=api_key)
+            model = legacy_genai.GenerativeModel(
+                model_name='gemini-1.5-flash',
+                system_instruction=system_instruction
+            )
+            response = model.generate_content(prompt)
+            ai_response = response.text
+        except Exception as err:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error communicating with Gemini API: {str(e)} | Legacy fallback error: {str(err)}"
+            )
+
+    return schemas.AIChatResponse(response=ai_response)

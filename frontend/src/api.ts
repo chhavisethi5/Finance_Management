@@ -432,3 +432,24 @@ export const getInvestmentProfile = (user_id: number) =>
 /** Create or replace a user's "Initial Past Investments Setup" summary. */
 export const updateInvestmentProfile = (user_id: number, payload: InvestmentProfilePayload) =>
   api.put<InvestmentProfile>(`/investment-profile/${user_id}`, payload).then((r) => r.data);
+
+
+// ─── AI Advisor (Chatbot) ───────────────────────────────────────────────────
+
+export interface AIChatMessage {
+  role: "user" | "model";
+  content: string;
+}
+
+export interface AIChatPayload {
+  user_id: number;
+  message: string;
+}
+
+export interface AIChatResponse {
+  response: string;
+}
+
+/** Get AI financial co-pilot advice based on user profile and query. */
+export const getAIChatResponse = (userId: number, message: string) =>
+  api.post<AIChatResponse>("/ai/chat", { user_id: userId, message }).then((r) => r.data);

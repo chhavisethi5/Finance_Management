@@ -20,6 +20,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard/history", icon: "🕒", label: "History" },
   { to: "/dashboard/investments", icon: "📈", label: "Investments" },
   { to: "/dashboard/budget-planner", icon: "🎯", label: "Budget Planner" },
+  { to: "/dashboard/ai-advisor", icon: "🤖", label: "AI Advisor" },
 ];
 
 interface SidebarProps {
