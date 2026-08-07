@@ -420,3 +420,69 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Custom High-End Upgrades ────────────────────────────────── */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+@keyframes mesh-drift-1 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+    opacity: 0.15;
+  }
+  33% {
+    transform: translate(60px, -80px) scale(1.25);
+    opacity: 0.25;
+  }
+  66% {
+    transform: translate(-40px, 50px) scale(0.85);
+    opacity: 0.12;
+  }
+}
+
+@keyframes mesh-drift-2 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1.1);
+    opacity: 0.1;
+  }
+  50% {
+    transform: translate(-70px, 70px) scale(0.9);
+    opacity: 0.2;
+  }
+}
+
+@keyframes mesh-drift-3 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(0.95);
+    opacity: 0.08;
+  }
+  40% {
+    transform: translate(50px, 60px) scale(1.15);
+    opacity: 0.18;
+  }
+  80% {
+    transform: translate(-50px, -50px) scale(1);
+    opacity: 0.12;
+  }
+}
+
+.animate-mesh-1 {
+  animation: mesh-drift-1 25s ease-in-out infinite;
+}
+
+.animate-mesh-2 {
+  animation: mesh-drift-2 30s ease-in-out infinite;
+}
+
+.animate-mesh-3 {
+  animation: mesh-drift-3 20s ease-in-out infinite;
+}
