@@ -11,17 +11,19 @@ import { useAuth } from "../context/AuthContext";
 import { isOnboarded } from "../api";
 import Sidebar from "../components/Sidebar";
 import TopNav from "../components/TopNav";
+import ProfileSettingsModal from "../components/ProfileSettingsModal";
 
 const COLLAPSE_STORAGE_KEY = "sidebar_collapsed";
 
 export default function DashboardLayout() {
-  const { currentUser } = useAuth();
+  const { currentUser, login } = useAuth();
   const location = useLocation();
   const isChatPage = location.pathname === "/dashboard/ai-advisor";
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_STORAGE_KEY) === "true"
   );
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(COLLAPSE_STORAGE_KEY, String(collapsed));
@@ -49,11 +51,25 @@ export default function DashboardLayout() {
         className={`flex flex-1 flex-col min-h-screen transition-all duration-300 ease-in-out ${collapsed ? "lg:ml-20" : "lg:ml-64"
           }`}
       >
-        <TopNav onOpenMobileSidebar={() => setMobileOpen(true)} />
+        <TopNav
+          onOpenMobileSidebar={() => setMobileOpen(true)}
+          onOpenProfileSettings={() => setShowProfileModal(true)}
+        />
         <main className={`flex flex-col flex-1 ${isChatPage ? "overflow-hidden" : "overflow-y-auto p-6"}`}>
-          <Outlet />
+          <Outlet context={{ openProfileModal: () => setShowProfileModal(true) }} />
         </main>
       </div>
+
+      {showProfileModal && currentUser && (
+        <ProfileSettingsModal
+          user={currentUser}
+          onClose={() => setShowProfileModal(false)}
+          onSaved={(updatedUser) => {
+            login(updatedUser);
+            setShowProfileModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1458,7 +1458,48 @@ def update_manual_savings(
     return db_user
 
 
+@app.put(
+    "/user/{user_id}/profile",
+    response_model=schemas.UserResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update a user's profile information and baseline savings",
+    tags=["User"],
+)
+def update_user_profile(
+    user_id: int,
+    update: schemas.UserProfileUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found",
+        )
+
+    db_user.name = update.name
+    db_user.monthly_income = update.monthly_income.quantize(Decimal("0.01"))
+    db_user.manual_savings_offset = update.manual_savings_offset.quantize(Decimal("0.01"))
+
+    # If the user has an existing budget plan, update the absolute targets to reflect the new income.
+    plan = db.query(models.BudgetPlan).filter(models.BudgetPlan.user_id == user_id).first()
+    if plan:
+        needs_frac = plan.needs_pct / Decimal("100")
+        wants_frac = plan.wants_pct / Decimal("100")
+        savings_frac = plan.savings_pct / Decimal("100")
+
+        plan.needs_target = (db_user.monthly_income * needs_frac).quantize(Decimal("0.01"))
+        plan.wants_target = (db_user.monthly_income * wants_frac).quantize(Decimal("0.01"))
+        plan.savings_target = (db_user.monthly_income * savings_frac).quantize(Decimal("0.01"))
+
+    db.commit()
+    db.refresh(db_user)
+
+    return db_user
+
+
 @app.post(
+
     "/financial-goals/{user_id}",
     response_model=schemas.FinancialGoalResponse,
     status_code=status.HTTP_201_CREATED,

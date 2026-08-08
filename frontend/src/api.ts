@@ -183,6 +183,12 @@ export interface UserSavingsUpdatePayload {
   manual_savings_offset: number;
 }
 
+export interface UserProfileUpdatePayload {
+  name: string;
+  monthly_income: number;
+  manual_savings_offset: number;
+}
+
 export interface RecurringExpense {
   id: number;
   user_id: number;
@@ -382,6 +388,12 @@ export const getBudgetPlan = (user_id: number) =>
 export const updateSavingsOffset = (user_id: number, manual_savings_offset: number) =>
   api
     .put<User>(`/user/${user_id}/savings`, { manual_savings_offset })
+    .then((r) => r.data);
+
+/** Update user's profile information (name, monthly income, and pre-existing savings baseline). */
+export const updateUserProfile = (user_id: number, payload: UserProfileUpdatePayload) =>
+  api
+    .put<User>(`/user/${user_id}/profile`, payload)
     .then((r) => r.data);
 
 /** Create a new financial goal for the user. */

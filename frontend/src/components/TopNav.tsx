@@ -2,23 +2,32 @@
  * TopNav.tsx — Top navigation bar for the dashboard layout
  */
 
-import { useLocation } from "react-router-dom";
+import { useState, useRef, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Menu } from "lucide-react";
+import { Menu, User, LogOut, ChevronDown } from "lucide-react";
 
 const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/dashboard": { title: "Overview", subtitle: "Your financial snapshot" },
   "/dashboard/transactions": { title: "Transactions", subtitle: "Log and review your spending" },
+  "/dashboard/history": { title: "History", subtitle: "Log and review your spending" },
+  "/dashboard/investments": { title: "Investments", subtitle: "Grow your wealth" },
   "/dashboard/budget-planner": { title: "Budget Planner", subtitle: "Configure your lifestyle tier" },
+  "/dashboard/ai-advisor": { title: "AI Advisor", subtitle: "Get tailored financial advice" },
 };
 
 interface TopNavProps {
   onOpenMobileSidebar: () => void;
+  onOpenProfileSettings: () => void;
 }
 
-export default function TopNav({ onOpenMobileSidebar }: TopNavProps) {
+export default function TopNav({ onOpenMobileSidebar, onOpenProfileSettings }: TopNavProps) {
   const { pathname } = useLocation();
-  const { currentUser } = useAuth();
+  const { currentUser, logout } = useAuth();
+  const navigate = useNavigate();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   const page = PAGE_TITLES[pathname] ?? { title: "Dashboard", subtitle: "" };
 
   const now = new Date().toLocaleDateString("en-US", {
@@ -26,6 +35,23 @@ export default function TopNav({ onOpenMobileSidebar }: TopNavProps) {
     month: "long",
     day: "numeric",
   });
+
+  const handleLogout = () => {
+    navigate("/");
+    setTimeout(() => {
+      logout();
+    }, 100);
+  };
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-[#2d3348] bg-[#0f1117]/80 px-4 sm:px-6 backdrop-blur-md">
@@ -44,7 +70,7 @@ export default function TopNav({ onOpenMobileSidebar }: TopNavProps) {
         </div>
       </div>
 
-      {/* ── Right: date + user badge ── */}
+      {/* ── Right: date + user badge/dropdown ── */}
       <div className="flex items-center gap-4">
         <span className="hidden sm:block text-xs text-[#475569]">{now}</span>
 
@@ -59,15 +85,58 @@ export default function TopNav({ onOpenMobileSidebar }: TopNavProps) {
           </svg>
         </button>
 
-        {/* Avatar */}
+        {/* Avatar & Dropdown */}
         {currentUser && (
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#4f8ef7] to-[#a78bfa] text-xs font-bold text-white shadow-md">
-              {currentUser.email.charAt(0).toUpperCase()}
-            </div>
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="flex items-center gap-2 focus:outline-none group"
+              aria-label="User menu"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#4f8ef7] to-[#a78bfa] text-xs font-bold text-white shadow-md transition-transform group-hover:scale-105">
+                {(currentUser.name ?? currentUser.email).charAt(0).toUpperCase()}
+              </div>
+              <ChevronDown className={`h-3 w-3 text-[#64748b] transition-transform duration-150 ${dropdownOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {dropdownOpen && (
+              <div className="absolute right-0 mt-2 w-56 origin-top-right rounded-xl border border-[#2d3348] bg-[#1a1d27] p-1.5 shadow-2xl ring-1 ring-black/5 animate-scale-up">
+                {/* User info */}
+                <div className="px-3 py-2 border-b border-[#2d3348] mb-1">
+                  <p className="truncate text-xs font-bold text-[#f1f5f9]">
+                    {currentUser.name ?? "User"}
+                  </p>
+                  <p className="truncate text-[10px] text-[#64748b]">{currentUser.email}</p>
+                </div>
+
+                {/* Actions */}
+                <button
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    onOpenProfileSettings();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#cbd5e1] hover:bg-[#252a3e] hover:text-[#4f8ef7] transition-all"
+                >
+                  <User className="h-3.5 w-3.5 text-[#4f8ef7]" />
+                  Manage Profile & Baselines
+                </button>
+
+                <button
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    handleLogout();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-400 hover:bg-rose-500/10 transition-all"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Sign Out
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
     </header>
   );
 }
+

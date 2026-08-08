@@ -132,7 +132,7 @@ export default function OnboardingPage() {
 
                         {/* Risk Appetite */}
                         <div className="form-group" style={{ marginBottom: 0 }}>
-                            <label className="block text-xs font-semibold text-[#94a3b8] mb-1">Set Your Risk Appetite</label>
+                            <label className="block text-xs font-semibold text-[#94a3b8] mb-1">Set Your Risk Appetite for Investments</label>
                             <p className="text-[10px] text-[#64748b] mb-2 leading-relaxed">
                                 Helps MoneyMap AI evaluate if your asset allocation fits your tolerance for volatility.
                             </p>

@@ -106,6 +106,31 @@ class UserSavingsUpdateRequest(BaseModel):
     )
 
 
+class UserProfileUpdateRequest(BaseModel):
+    """
+    Request body for PUT /user/{user_id}/profile.
+
+    Allows updating the core account information and baseline settings.
+    """
+
+    name: str = Field(..., min_length=1, max_length=255, description="User's full name")
+    monthly_income: Decimal = Field(
+        ...,
+        ge=0,
+        max_digits=10,
+        decimal_places=2,
+        description="User's monthly income, in INR."
+    )
+    manual_savings_offset: Decimal = Field(
+        ...,
+        ge=0,
+        max_digits=14,
+        decimal_places=2,
+        description="Total pre-existing savings from before using MoneyMap, in INR."
+    )
+
+
+
 # -------------------------
 # Transaction Schemas
 # -------------------------
