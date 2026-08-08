@@ -1728,7 +1728,7 @@ def ai_chat(payload: schemas.AIChatRequest, db: Session = Depends(get_db)):
 
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.5-flash-lite',
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction
@@ -1741,7 +1741,7 @@ def ai_chat(payload: schemas.AIChatRequest, db: Session = Depends(get_db)):
             import google.generativeai as legacy_genai
             legacy_genai.configure(api_key=api_key)
             model = legacy_genai.GenerativeModel(
-                model_name='gemini-1.5-flash',
+                model_name='gemini-3.5-flash-lite',
                 system_instruction=system_instruction
             )
             response = model.generate_content(prompt)
