@@ -7,14 +7,16 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   getBudgetStatus,
   getFinancialGoals,
   createFinancialGoal,
   formatINR,
   getErrorMessage,
+  getInvestments,
 } from "../api";
-import type { BudgetStatus, FinancialGoal, User } from "../api";
+import type { BudgetStatus, FinancialGoal, User, Investment } from "../api";
 import { useAuth } from "../context/AuthContext";
 import ProgressBar from "../components/ProgressBar";
 import {
@@ -31,6 +33,7 @@ import {
   PieChart as PieChartIcon,
   BarChart3,
   Pencil,
+  Bot,
 } from "lucide-react";
 import EditGoalModal from "../components/EditGoalModal";
 import InitialSavingsModal from "../components/InitialSavingsModal";
@@ -105,10 +108,13 @@ const PIE_COLORS = ["#34d399", "#a78bfa", "#4f8ef7", "#fbbf24", "#f87171", "#38b
 
 export default function OverviewPage() {
   const { currentUser, login } = useAuth();
+  const navigate = useNavigate();
   const [status, setStatus] = useState<BudgetStatus | null>(null);
   const [goals, setGoals] = useState<FinancialGoal[]>([]);
+  const [investments, setInvestments] = useState<Investment[]>([]);
   const [loading, setLoading] = useState(false);
   const [goalLoading, setGoalLoading] = useState(false);
+  const [investmentsLoading, setInvestmentsLoading] = useState(false);
   const [error, setError] = useState("");
   const [goalError, setGoalError] = useState("");
   const [goalSuccess, setGoalSuccess] = useState("");
@@ -155,10 +161,24 @@ export default function OverviewPage() {
     }
   }, [currentUser]);
 
+  const fetchInvestments = useCallback(async () => {
+    if (!currentUser) return;
+    setInvestmentsLoading(true);
+    try {
+      const data = await getInvestments(currentUser.id);
+      setInvestments(data);
+    } catch (err: unknown) {
+      console.error("Could not load investments for overview insights:", err);
+    } finally {
+      setInvestmentsLoading(false);
+    }
+  }, [currentUser]);
+
   useEffect(() => {
     void fetchStatus();
     void fetchGoals();
-  }, [fetchStatus, fetchGoals]);
+    void fetchInvestments();
+  }, [fetchStatus, fetchGoals, fetchInvestments]);
 
   const handleSavingsOffsetSaved = async (updatedUser: User) => {
     login(updatedUser); // keep AuthContext / localStorage in sync
@@ -269,6 +289,119 @@ export default function OverviewPage() {
     }
   };
 
+  const getAIRecommendation = () => {
+    const risk = currentUser?.risk_appetite || "Medium";
+
+    if (investments.length === 0) {
+      if (risk === "Low") {
+        return {
+          title: "Build Stable Foundation",
+          text: "No investments logged yet. As a low-risk profile investor, consider setting up a stable foundation with conservative instruments like Bank FDs or Post Office schemes to build a secure financial safety net.",
+          badge: "Low Risk Profile",
+          badgeColor: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+        };
+      } else if (risk === "High") {
+        return {
+          title: "Growth Capital Opportunities",
+          text: "No investments logged yet. Since you have a high risk appetite, you can target long-term capital appreciation. Once you secure your emergency fund, consider high-growth equity options like Stocks or diversified Mutual Funds.",
+          badge: "High Risk Profile",
+          badgeColor: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+        };
+      } else {
+        return {
+          title: "Balanced Inception Plan",
+          text: "No investments logged yet. With a medium risk tolerance, a balanced approach combining Mutual Funds (for growth) with Fixed Deposits (for stability) would be an ideal starting point.",
+          badge: "Medium Risk Profile",
+          badgeColor: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+        };
+      }
+    }
+
+    const total = investments.reduce((acc, curr) => acc + Number(curr.amount), 0);
+    if (total === 0) {
+      return {
+        title: "Log Your First Asset",
+        text: "Please add the details of your investments to get dynamic diversification and risk alignment insights.",
+        badge: `${risk} Risk Profile`,
+        badgeColor: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+      };
+    }
+
+    // Categorization
+    const aggressiveTypes = ["Stocks", "Mutual Funds"];
+    const conservativeTypes = ["Bank FD", "Post Office"];
+
+    const aggressiveTotal = investments
+      .filter((inv) => aggressiveTypes.includes(inv.investment_type))
+      .reduce((acc, curr) => acc + Number(curr.amount), 0);
+
+    const conservativeTotal = investments
+      .filter((inv) => conservativeTypes.includes(inv.investment_type))
+      .reduce((acc, curr) => acc + Number(curr.amount), 0);
+
+    const aggressivePct = (aggressiveTotal / total) * 100;
+    const conservativePct = (conservativeTotal / total) * 100;
+
+    if (risk === "Low") {
+      if (aggressivePct > 50) {
+        return {
+          title: "High Risk Exposure Alert",
+          text: `Risk Exposure Mismatch: You have a Low risk profile, but ${aggressivePct.toFixed(0)}% of your investments are in aggressive assets (Stocks/Mutual Funds). Consider rebalancing toward fixed deposits or debt instruments to secure your capital.`,
+          badge: "Low Risk Profile",
+          badgeColor: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+        };
+      } else {
+        return {
+          title: "Capital Protection Active",
+          text: `Portfolio Aligned: Your investment mix is well-aligned with your Low risk profile. You have a solid foundation in conservative assets (${conservativePct.toFixed(0)}% in FDs/Post Office). Focus on maintaining a healthy emergency fund buffer.`,
+          badge: "Low Risk Profile",
+          badgeColor: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+        };
+      }
+    } else if (risk === "High") {
+      if (conservativePct > 60) {
+        return {
+          title: "Opportunity Cost Underway",
+          text: `Growth Opportunity: You have a High risk appetite, but ${conservativePct.toFixed(0)}% of your assets are in conservative holdings (FD/Post Office). Your capital might be underperforming inflation. Consider shifting some funds to diversified equity/mutual funds.`,
+          badge: "High Risk Profile",
+          badgeColor: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+        };
+      } else {
+        return {
+          title: "Aggressive Growth Plan",
+          text: `Portfolio Aligned: Your portfolio is optimized for long-term growth with ${aggressivePct.toFixed(0)}% in equity assets, matching your High risk profile. Watch out for high concentration in single stocks or sectors.`,
+          badge: "High Risk Profile",
+          badgeColor: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+        };
+      }
+    } else { // Medium
+      if (aggressivePct > 70) {
+        return {
+          title: "Volatility Shield Recommended",
+          text: `Balance Advisory: As a Medium risk investor, your portfolio leans heavily aggressive (${aggressivePct.toFixed(0)}% in Stocks/Mutual Funds). You might experience high volatility. Consider adding stable debt assets to buffer market swings.`,
+          badge: "Medium Risk Profile",
+          badgeColor: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+        };
+      } else if (conservativePct > 70) {
+        return {
+          title: "Capital Expansion Advice",
+          text: `Growth Advisory: Your portfolio has ${conservativePct.toFixed(0)}% in conservative assets. For a Medium risk profile, you could tolerate moderate equity exposure (like Index Mutual Funds) to beat inflation and accelerate your goal targets.`,
+          badge: "Medium Risk Profile",
+          badgeColor: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+        };
+      } else {
+        return {
+          title: "Optimized Balanced Mix",
+          text: `Portfolio Aligned: Your portfolio shows a healthy balance of aggressive and conservative assets, perfectly matching your Medium risk profile. This provides both growth and stability.`,
+          badge: "Medium Risk Profile",
+          badgeColor: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+        };
+      }
+    }
+  };
+
+  const rec = getAIRecommendation();
+
   return (
     <>
       <div className="space-y-6 max-w-6xl mx-auto pb-8 animate-slide-up">
@@ -300,12 +433,13 @@ export default function OverviewPage() {
             onClick={() => {
               void fetchStatus();
               void fetchGoals();
+              void fetchInvestments();
             }}
-            disabled={loading}
+            disabled={loading || investmentsLoading}
             className="flex items-center gap-1.5 rounded-xl border border-[#2d3348] bg-[#1a1d27] px-3 py-1.5 text-xs font-medium text-[#94a3b8] hover:border-[#4f8ef7]/50 hover:text-[#4f8ef7] transition-all disabled:opacity-50"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            {loading ? "Loading…" : "Refresh"}
+            <RefreshCw className={`h-3.5 w-3.5 ${loading || investmentsLoading ? "animate-spin" : ""}`} />
+            {loading || investmentsLoading ? "Loading…" : "Refresh"}
           </button>
         </div>
       </div>
@@ -358,6 +492,41 @@ export default function OverviewPage() {
           />
         </div>
       )}
+
+      {/* ── MoneyMap AI Portfolio Insights Card ── */}
+      <div className="relative overflow-hidden rounded-2xl border border-[#2d3348] bg-gradient-to-r from-[#1a1d27] to-[#1e2235] p-5 shadow-card hover:border-[#3d4466] transition-all">
+        {/* Decorative background glows */}
+        <div className="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-[#4f8ef7]/10 blur-2xl pointer-events-none"></div>
+        <div className="absolute -left-16 -bottom-16 h-32 w-32 rounded-full bg-[#a78bfa]/10 blur-2xl pointer-events-none"></div>
+
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative z-10">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#4f8ef7] to-[#a78bfa] text-white shadow-glow">
+              <Sparkles className="h-5 w-5 animate-pulse" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h4 className="text-sm font-bold text-[#f1f5f9]">MoneyMap AI Portfolio Insights</h4>
+                <span className={`rounded-full border px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${rec.badgeColor}`}>
+                  {rec.badge}
+                </span>
+              </div>
+              <p className="text-xs font-semibold text-[#4f8ef7]">{rec.title}</p>
+              <p className="text-[11px] text-[#cbd5e1] leading-relaxed max-w-2xl">
+                {rec.text}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => navigate("/dashboard/ai-advisor")}
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#4f8ef7] to-[#6c63ff] px-4 py-2 text-xs font-semibold text-white shadow-md shadow-[#4f8ef7]/20 hover:opacity-95 hover:shadow-[#4f8ef7]/35 active:scale-95 transition-all shrink-0 self-end sm:self-center"
+          >
+            <span>Ask AI for details</span>
+            <Bot className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
 
       {/* ── 2. Smart Insights Panel ── */}
       {status && status.insights.length > 0 && (

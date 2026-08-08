@@ -41,10 +41,10 @@ export default function AIChat() {
   };
 
   const suggestionChips = [
-    "Am I on track for my monthly savings target?",
-    "Review my spending habits and flag areas of concern.",
-    "Do I have enough liquid assets for my emergency fund?",
-    "Give me advice on pacing my financial goals.",
+    "🔍 Analyze my portfolio diversification and risk level.",
+    "📈 Where should I invest next based on my risk profile?",
+    "🎯 Am I on track to meet my financial and savings goals?",
+    "💡 Review my spending habits and flag areas of concern.",
   ];
 
   const handleSend = async (textToSend: string) => {
@@ -136,7 +136,7 @@ export default function AIChat() {
                     onClick={() => handleSend(chip)}
                     className="rounded-xl border border-[#2d3348] bg-[#252a3e]/30 px-4 py-3 text-left text-xs font-medium text-[#94a3b8] hover:border-[#4f8ef7]/40 hover:bg-[#252a3e] hover:text-[#f1f5f9] transition-all duration-200"
                   >
-                    💡 {chip}
+                    {chip}
                   </button>
                 ))}
               </div>
@@ -206,22 +206,22 @@ export default function AIChat() {
           e.preventDefault();
           handleSend(input);
         }}
-        className="border-t border-[#2d3348] bg-[#10121a] px-8 py-5 shrink-0"
+        className="border-t border-[#2d3348] bg-[#10121a]/95 backdrop-blur-sm px-8 py-5 shrink-0"
       >
         <div className="max-w-3xl mx-auto w-full space-y-3">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 bg-[#1e2235]/65 border border-[#2d3348]/90 focus-within:border-[#4f8ef7]/60 focus-within:ring-2 focus-within:ring-[#4f8ef7]/15 rounded-2xl pl-5 pr-2.5 py-1.5 shadow-[0_8px_30px_rgb(0,0,0,0.35)] transition-all duration-200">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={loading}
               placeholder="Ask MoneyMap AI about your budgets, goals, spending habits..."
-              className="flex-1 bg-transparent py-3 text-sm text-[#f1f5f9] placeholder-[#475569] outline-none disabled:opacity-50"
+              className="flex-1 bg-transparent py-2.5 text-sm text-[#f1f5f9] placeholder-[#5f7390] outline-none disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={!input.trim() || loading}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#4f8ef7] to-[#6c63ff] text-white shadow-lg shadow-[#4f8ef7]/15 hover:opacity-90 active:scale-95 transition-all disabled:pointer-events-none disabled:opacity-40"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#4f8ef7] to-[#6c63ff] text-white shadow-lg shadow-[#4f8ef7]/15 hover:opacity-90 active:scale-95 transition-all disabled:pointer-events-none disabled:opacity-30"
             >
               <Send className="h-4 w-4" />
             </button>
