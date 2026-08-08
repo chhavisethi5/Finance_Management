@@ -11,7 +11,7 @@ import { useState } from "react";
 import { X, TrendingUp, Plus, Pencil } from "lucide-react";
 import { createInvestment, updateInvestment, getErrorMessage } from "../api";
 import type { Investment, InvestmentType } from "../api";
-import { INVESTMENT_TYPES, METAL_TYPES, PROPERTY_TYPES, isPreciousMetal, isProperty } from "../constants/investmentTypes";
+import { INVESTMENT_TYPES, METAL_TYPES, PROPERTY_TYPES, isCommodity, isProperty } from "../constants/investmentTypes";
 
 interface InvestmentModalProps {
     userId: number;
@@ -51,12 +51,34 @@ export default function InvestmentModal({ userId, editingItem, isPastMode, onClo
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
 
-    const needsMetal = isPreciousMetal(form.investment_type);
+    const needsCommodity = isCommodity(form.investment_type);
     const needsProperty = isProperty(form.investment_type);
+
+    const [selectedSubtype, setSelectedSubtype] = useState(() => {
+        if (!editingItem) return "";
+        if (editingItem.investment_type === "Commodities" && editingItem.sub_type) {
+            if (["Gold", "Silver", "Diamond", "Platinum"].includes(editingItem.sub_type)) {
+                return editingItem.sub_type;
+            }
+            return "Other";
+        }
+        return editingItem.sub_type ?? "";
+    });
+
+    const [customSubtype, setCustomSubtype] = useState(() => {
+        if (editingItem && editingItem.investment_type === "Commodities" && editingItem.sub_type) {
+            if (!["Gold", "Silver", "Diamond", "Platinum"].includes(editingItem.sub_type)) {
+                return editingItem.sub_type;
+            }
+        }
+        return "";
+    });
 
     const handleTypeChange = (type: InvestmentType) => {
         // Reset the type-specific fields whenever the investment type changes.
         setForm({ ...form, investment_type: type, sub_type: "", quantity: "" });
+        setSelectedSubtype("");
+        setCustomSubtype("");
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -70,14 +92,25 @@ export default function InvestmentModal({ userId, editingItem, isPastMode, onClo
         }
 
         let quantityNum: number | undefined;
-        if (needsMetal || needsProperty) {
-            if (!form.sub_type) {
-                setError(needsMetal ? "Please select a metal type." : "Please select a property type.");
-                return;
+        if (needsCommodity || needsProperty) {
+            if (needsCommodity) {
+                if (!selectedSubtype) {
+                    setError("Please select a commodity type.");
+                    return;
+                }
+                if (selectedSubtype === "Other" && !customSubtype.trim()) {
+                    setError("Please specify the commodity name.");
+                    return;
+                }
+            } else {
+                if (!form.sub_type) {
+                    setError("Please select a property type.");
+                    return;
+                }
             }
             quantityNum = Number(form.quantity);
             if (isNaN(quantityNum) || quantityNum <= 0) {
-                setError(needsMetal ? "Please enter the weight in grams." : "Please enter the number of properties.");
+                setError(needsCommodity ? "Please enter the weight in grams." : "Please enter the number of properties.");
                 return;
             }
         }
@@ -87,7 +120,9 @@ export default function InvestmentModal({ userId, editingItem, isPastMode, onClo
             const payload = {
                 investment_type: form.investment_type,
                 amount: amountNum,
-                sub_type: form.sub_type || undefined,
+                sub_type: needsCommodity
+                    ? (selectedSubtype === "Other" ? customSubtype.trim() : selectedSubtype)
+                    : (form.sub_type || undefined),
                 quantity: quantityNum,
                 investment_date: form.investment_date,
                 comment: form.comment.trim() || undefined,
@@ -162,33 +197,47 @@ export default function InvestmentModal({ userId, editingItem, isPastMode, onClo
                         />
                     </div>
 
-                    {/* Precious Metals — metal + grams */}
-                    {needsMetal && (
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="block mb-1 font-semibold text-[#94a3b8]">Metal</label>
-                                <select
-                                    value={form.sub_type}
-                                    onChange={(e) => setForm({ ...form, sub_type: e.target.value })}
-                                    className="w-full rounded-xl border border-[#2d3348] bg-[#151827] p-2.5 text-[#f1f5f9] outline-none focus:border-[#4f8ef7]"
-                                >
-                                    <option value="">Select…</option>
-                                    {METAL_TYPES.map((m) => (
-                                        <option key={m} value={m}>{m}</option>
-                                    ))}
-                                </select>
+                    {/* Commodities — type + grams */}
+                    {needsCommodity && (
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block mb-1 font-semibold text-[#94a3b8]">Commodity</label>
+                                    <select
+                                        value={selectedSubtype}
+                                        onChange={(e) => setSelectedSubtype(e.target.value)}
+                                        className="w-full rounded-xl border border-[#2d3348] bg-[#151827] p-2.5 text-[#f1f5f9] outline-none focus:border-[#4f8ef7]"
+                                    >
+                                        <option value="">Select…</option>
+                                        {METAL_TYPES.map((m) => (
+                                            <option key={m} value={m}>{m}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block mb-1 font-semibold text-[#94a3b8]">Weight (grams)</label>
+                                    <input
+                                        type="number"
+                                        min="0.001"
+                                        step="0.001"
+                                        value={form.quantity}
+                                        onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                                        className="w-full rounded-xl border border-[#2d3348] bg-[#151827] p-2.5 text-[#f1f5f9] outline-none focus:border-[#4f8ef7]"
+                                    />
+                                </div>
                             </div>
-                            <div>
-                                <label className="block mb-1 font-semibold text-[#94a3b8]">Weight (grams)</label>
-                                <input
-                                    type="number"
-                                    min="0.001"
-                                    step="0.001"
-                                    value={form.quantity}
-                                    onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-                                    className="w-full rounded-xl border border-[#2d3348] bg-[#151827] p-2.5 text-[#f1f5f9] outline-none focus:border-[#4f8ef7]"
-                                />
-                            </div>
+                            {selectedSubtype === "Other" && (
+                                <div>
+                                    <label className="block mb-1 font-semibold text-[#94a3b8]">Specify Commodity</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Copper, Bronze, Wheat"
+                                        value={customSubtype}
+                                        onChange={(e) => setCustomSubtype(e.target.value)}
+                                        className="w-full rounded-xl border border-[#2d3348] bg-[#151827] p-2.5 text-[#f1f5f9] outline-none focus:border-[#4f8ef7]"
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
 

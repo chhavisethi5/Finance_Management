@@ -22,6 +22,7 @@ export interface User {
   name: string | null;
   monthly_income: number | null;
   manual_savings_offset: number;
+  risk_appetite: "Low" | "Medium" | "High" | null;
 }
 
 /** True once the user has completed the onboarding step. */
@@ -32,6 +33,7 @@ export interface OnboardingPayload {
   name: string;
   monthly_income: number;
   lifestyle_tier: string;
+  risk_appetite: "Low" | "Medium" | "High";
 }
 
 export interface OnboardingResult {
@@ -220,7 +222,7 @@ export interface RecurringExpenseUpdatePayload {
 
 export type InvestmentType =
   | "Property"
-  | "Precious Metals"
+  | "Commodities"
   | "Stocks"
   | "Mutual Funds"
   | "Bank FD"
@@ -231,9 +233,9 @@ export interface Investment {
   user_id: number;
   investment_type: InvestmentType;
   amount: number;
-  // Precious Metals -> metal name (Gold/Silver/Diamond/Platinum). Property -> property type.
+  // Commodities -> commodity name (Gold/Silver/Diamond/Platinum/Other). Property -> property type.
   sub_type: string | null;
-  // Precious Metals -> grams. Property -> number of properties.
+  // Commodities -> grams. Property -> number of properties.
   quantity: number | null;
   investment_date: string;
   comment: string | null;
@@ -267,12 +269,18 @@ export interface PropertyItem {
   amount: number;
 }
 
+export interface OtherCommodityItem {
+  commodity_name: string;
+  weight_grams: number;
+}
+
 /** The "Initial Past Investments Setup" summary — one per user. */
 export interface InvestmentProfile {
   id: number;
   user_id: number;
   properties: PropertyItem[];
   property_count: number;
+  other_commodities: OtherCommodityItem[];
   gold_grams: number;
   silver_grams: number;
   diamond_grams: number;
@@ -287,6 +295,7 @@ export interface InvestmentProfile {
 /** Full-replace payload for PUT /investment-profile/{user_id}. */
 export interface InvestmentProfilePayload {
   properties: PropertyItem[];
+  other_commodities: OtherCommodityItem[];
   gold_grams: number;
   silver_grams: number;
   diamond_grams: number;
@@ -314,6 +323,12 @@ export const logIn = (email: string, password: string) =>
 export const onboardUser = (user_id: number, payload: OnboardingPayload) =>
   api
     .post<OnboardingResult>(`/onboarding/${user_id}`, payload)
+    .then((r) => r.data);
+
+/** Update user's risk appetite setting dynamically. */
+export const updateRiskAppetite = (user_id: number, riskAppetite: "Low" | "Medium" | "High") =>
+  api
+    .put<{ status: string; risk_appetite: string }>(`/user/${user_id}/risk-appetite`, { risk_appetite: riskAppetite })
     .then((r) => r.data);
 
 // ─── Domain API functions ────────────────────────────────────────────────────

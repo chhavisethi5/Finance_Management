@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import { Landmark, Plus, Trash2, Save } from "lucide-react";
 import { getInvestmentProfile, updateInvestmentProfile, formatINR, getErrorMessage } from "../api";
-import type { InvestmentProfile, PropertyItem } from "../api";
+import type { InvestmentProfile, PropertyItem, OtherCommodityItem } from "../api";
 import { PROPERTY_TYPES } from "../constants/investmentTypes";
 
 interface InvestmentProfileCardProps {
@@ -19,6 +19,7 @@ interface InvestmentProfileCardProps {
 
 type FormState = {
     properties: PropertyItem[];
+    other_commodities: OtherCommodityItem[];
     gold_grams: string;
     silver_grams: string;
     diamond_grams: string;
@@ -32,6 +33,7 @@ type FormState = {
 
 const emptyForm: FormState = {
     properties: [],
+    other_commodities: [],
     gold_grams: "0",
     silver_grams: "0",
     diamond_grams: "0",
@@ -45,6 +47,7 @@ const emptyForm: FormState = {
 
 const toFormState = (p: InvestmentProfile): FormState => ({
     properties: p.properties,
+    other_commodities: p.other_commodities || [],
     gold_grams: String(p.gold_grams),
     silver_grams: String(p.silver_grams),
     diamond_grams: String(p.diamond_grams),
@@ -96,6 +99,20 @@ export default function InvestmentProfileCard({ userId }: InvestmentProfileCardP
         setForm({ ...form, properties: form.properties.filter((_, i) => i !== index) });
     };
 
+    const addOtherCommodityRow = () => {
+        setForm({ ...form, other_commodities: [...(form.other_commodities || []), { commodity_name: "", weight_grams: 0 }] });
+    };
+
+    const updateOtherCommodityRow = (index: number, field: keyof OtherCommodityItem, value: string) => {
+        const next = [...(form.other_commodities || [])];
+        next[index] = { ...next[index], [field]: field === "weight_grams" ? Number(value) : value };
+        setForm({ ...form, other_commodities: next });
+    };
+
+    const removeOtherCommodityRow = (index: number) => {
+        setForm({ ...form, other_commodities: (form.other_commodities || []).filter((_, i) => i !== index) });
+    };
+
     const numField = (key: keyof FormState, value: string) => setForm({ ...form, [key]: value });
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -115,11 +132,16 @@ export default function InvestmentProfileCard({ userId }: InvestmentProfileCardP
             setError("Every property needs a type and a non-negative amount.");
             return;
         }
+        if ((form.other_commodities || []).some((c) => !c.commodity_name.trim() || c.weight_grams < 0)) {
+            setError("Every custom commodity needs a name and a non-negative weight.");
+            return;
+        }
 
         setSaving(true);
         try {
             const saved = await updateInvestmentProfile(userId, {
                 properties: form.properties,
+                other_commodities: form.other_commodities || [],
                 gold_grams: Number(form.gold_grams),
                 silver_grams: Number(form.silver_grams),
                 diamond_grams: Number(form.diamond_grams),
@@ -140,6 +162,11 @@ export default function InvestmentProfileCard({ userId }: InvestmentProfileCardP
     };
 
     const totalPropertyValue = form.properties.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const totalOtherCommoditiesWeight = form.other_commodities?.reduce((sum, c) => sum + (Number(c.weight_grams) || 0), 0) || 0;
+    const totalCommoditiesWeight = Number(form.gold_grams) + Number(form.silver_grams) + Number(form.diamond_grams) + Number(form.platinum_grams) + totalOtherCommoditiesWeight;
+
+    const commoditiesSubList = ["Gold", "Silver", "Diamond", "Platinum", ...(form.other_commodities?.map(c => c.commodity_name).filter(Boolean) || [])];
+    const commoditiesSubText = commoditiesSubList.length > 0 ? commoditiesSubList.slice(0, 4).join(" · ") + (commoditiesSubList.length > 4 ? " + more" : "") : "Gold · Silver · Diamond · Platinum";
 
     return (
         <div className="rounded-2xl border border-[#2d3348] bg-[#1e2235] p-5 shadow-card space-y-4">
@@ -166,7 +193,7 @@ export default function InvestmentProfileCard({ userId }: InvestmentProfileCardP
             ) : !expanded ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
                     <SummaryPill label="Property" value={formatINR(totalPropertyValue)} sub={`${form.properties.length} ${form.properties.length === 1 ? "property" : "properties"}`} />
-                    <SummaryPill label="Precious Metals" value={`${(Number(form.gold_grams) + Number(form.silver_grams) + Number(form.diamond_grams) + Number(form.platinum_grams)).toFixed(2)} g`} sub="Gold · Silver · Diamond · Platinum" />
+                    <SummaryPill label="Commodities" value={`${totalCommoditiesWeight.toFixed(2)} g`} sub={commoditiesSubText} />
                     <SummaryPill label="Stocks" value={formatINR(form.stocks_value)} />
                     <SummaryPill label="Mutual Funds" value={formatINR(form.mutual_funds_value)} />
                     <SummaryPill label="Bank FDs" value={formatINR(form.bank_fd_value)} />
@@ -221,15 +248,53 @@ export default function InvestmentProfileCard({ userId }: InvestmentProfileCardP
                         )}
                     </div>
 
-                    {/* Precious Metals */}
+                    {/* Commodities */}
                     <div className="rounded-xl border border-[#2d3348] bg-[#151827] p-3 space-y-2">
-                        <p className="font-semibold text-[#f1f5f9]">Precious Metals (grams)</p>
+                        <div className="flex items-center justify-between">
+                            <p className="font-semibold text-[#f1f5f9]">Commodities (grams)</p>
+                            <button type="button" onClick={addOtherCommodityRow} className="flex items-center gap-1 text-[#4f8ef7] hover:underline">
+                                <Plus className="h-3 w-3" /> Add Other Commodity
+                            </button>
+                        </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                             <NumberField label="Gold" value={form.gold_grams} onChange={(v) => numField("gold_grams", v)} />
                             <NumberField label="Silver" value={form.silver_grams} onChange={(v) => numField("silver_grams", v)} />
                             <NumberField label="Diamond" value={form.diamond_grams} onChange={(v) => numField("diamond_grams", v)} />
                             <NumberField label="Platinum" value={form.platinum_grams} onChange={(v) => numField("platinum_grams", v)} />
                         </div>
+                        {form.other_commodities && form.other_commodities.length > 0 && (
+                            <div className="pt-2 border-t border-[#2d3348]/50 space-y-2">
+                                <p className="text-[11px] font-semibold text-[#94a3b8]">Other Commodities</p>
+                                {form.other_commodities.map((c, i) => (
+                                    <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                                        <div>
+                                            <label className="block mb-1 text-[#94a3b8] text-[10px]">Commodity Name</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. Copper, Bronze"
+                                                value={c.commodity_name}
+                                                onChange={(e) => updateOtherCommodityRow(i, "commodity_name", e.target.value)}
+                                                className="w-full rounded-lg border border-[#2d3348] bg-[#1a1d27] p-2 text-[#f1f5f9] outline-none focus:border-[#4f8ef7]"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block mb-1 text-[#94a3b8] text-[10px]">Weight (grams)</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.001"
+                                                value={c.weight_grams}
+                                                onChange={(e) => updateOtherCommodityRow(i, "weight_grams", e.target.value)}
+                                                className="w-full rounded-lg border border-[#2d3348] bg-[#1a1d27] p-2 text-[#f1f5f9] outline-none focus:border-[#4f8ef7]"
+                                            />
+                                        </div>
+                                        <button type="button" onClick={() => removeOtherCommodityRow(i)} className="mb-0.5 text-[#94a3b8] hover:text-rose-400">
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* Financial instruments */}

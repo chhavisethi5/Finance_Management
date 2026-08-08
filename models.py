@@ -20,6 +20,9 @@ class User(Base):
     # not at signup time.
     monthly_income = Column(Numeric(10, 2), nullable=True)
 
+    # Risk appetite: Low, Medium, High
+    risk_appetite = Column(String(50), nullable=True, default="Medium")
+
     # Emergency savings tracker for the user's cash reserve.
     # NOTE: retained for backward compatibility with existing rows, but no
     # longer written to or read by the API — emergency fund status is now
@@ -194,10 +197,10 @@ class RecurringExpense(Base):
 class Investment(Base):
     """
     A single logged investment ("+ Add New Investment"). Each entry belongs to
-    one of six types (Property, Precious Metals, Stocks, Mutual Funds, Bank
+    one of six types (Property, Commodities, Stocks, Mutual Funds, Bank
     FD, Post Office). `sub_type` / `quantity` hold the type-specific details:
       - Property:        sub_type = property type (e.g. 'Residential'), quantity = number of properties
-      - Precious Metals:  sub_type = metal (Gold/Silver/Diamond/Platinum), quantity = grams
+      - Commodities:     sub_type = commodity (Gold/Silver/Diamond/Platinum or custom), quantity = grams
       - Stocks / Mutual Funds / Bank FD / Post Office: sub_type & quantity unused (amount only)
 
     Creating an Investment automatically deducts `amount` from the user's
@@ -221,7 +224,7 @@ class Investment(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "investment_type IN ('Property','Precious Metals','Stocks','Mutual Funds','Bank FD','Post Office')",
+            "investment_type IN ('Property','Commodities','Stocks','Mutual Funds','Bank FD','Post Office')",
             name="check_investment_type",
         ),
         CheckConstraint("amount > 0", name="check_investment_amount_positive"),
@@ -242,6 +245,9 @@ class InvestmentProfile(Base):
 
     # List of {"property_type": str, "amount": number} objects
     properties = Column(JSON, nullable=False, default=list)
+
+    # List of {"commodity_name": str, "weight_grams": number} objects
+    other_commodities = Column(JSON, nullable=False, default=list)
 
     gold_grams = Column(Numeric(12, 3), nullable=False, default=0)
     silver_grams = Column(Numeric(12, 3), nullable=False, default=0)

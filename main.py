@@ -851,6 +851,7 @@ def delete_investment(investment_id: int, db: Session = Depends(get_db)):
 
 def _serialize_investment_profile(profile: models.InvestmentProfile) -> schemas.InvestmentProfileResponse:
     props = profile.properties or []
+    other_comm = profile.other_commodities or []
     return schemas.InvestmentProfileResponse(
         id=profile.id,
         user_id=profile.user_id,
@@ -860,6 +861,7 @@ def _serialize_investment_profile(profile: models.InvestmentProfile) -> schemas.
         silver_grams=profile.silver_grams,
         diamond_grams=profile.diamond_grams,
         platinum_grams=profile.platinum_grams,
+        other_commodities=[schemas.OtherCommodityItem(**c) for c in other_comm],
         stocks_value=profile.stocks_value,
         mutual_funds_value=profile.mutual_funds_value,
         bank_fd_value=profile.bank_fd_value,
@@ -870,9 +872,9 @@ def _serialize_investment_profile(profile: models.InvestmentProfile) -> schemas.
 
 _EMPTY_INVESTMENT_PROFILE_KWARGS = dict(
     properties=[], gold_grams=Decimal("0"), silver_grams=Decimal("0"),
-    diamond_grams=Decimal("0"), platinum_grams=Decimal("0"), stocks_value=Decimal("0"),
-    mutual_funds_value=Decimal("0"), bank_fd_value=Decimal("0"), post_office_value=Decimal("0"),
-    comment=None,
+    diamond_grams=Decimal("0"), platinum_grams=Decimal("0"), other_commodities=[],
+    stocks_value=Decimal("0"), mutual_funds_value=Decimal("0"), bank_fd_value=Decimal("0"),
+    post_office_value=Decimal("0"), comment=None,
 )
 
 
@@ -906,6 +908,7 @@ def upsert_investment_profile(user_id: int, payload: schemas.InvestmentProfileUp
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with ID {user_id} not found")
 
     properties_json = [p.model_dump(mode="json") for p in payload.properties]
+    other_commodities_json = [c.model_dump(mode="json") for c in payload.other_commodities]
     profile = db.query(models.InvestmentProfile).filter(models.InvestmentProfile.user_id == user_id).first()
 
     if not profile:
@@ -913,6 +916,7 @@ def upsert_investment_profile(user_id: int, payload: schemas.InvestmentProfileUp
         db.add(profile)
 
     profile.properties = properties_json
+    profile.other_commodities = other_commodities_json
     profile.gold_grams = payload.gold_grams
     profile.silver_grams = payload.silver_grams
     profile.diamond_grams = payload.diamond_grams
@@ -1164,6 +1168,7 @@ def complete_onboarding(
 
     db_user.name = onboarding_in.name
     db_user.monthly_income = onboarding_in.monthly_income
+    db_user.risk_appetite = onboarding_in.risk_appetite
     db_user.onboarded_at = db_user.onboarded_at or date.today()
     db.commit()
     db.refresh(db_user)
@@ -1178,6 +1183,25 @@ def complete_onboarding(
     )
 
     return schemas.OnboardingResponse(user=db_user, budget_plan=plan)
+
+
+@app.put(
+    "/user/{user_id}/risk-appetite",
+    summary="Update a user's risk appetite setting",
+    tags=["Auth / Onboarding"],
+)
+def update_risk_appetite(
+    user_id: int,
+    payload: schemas.RiskAppetiteUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db_user.risk_appetite = payload.risk_appetite
+    db.commit()
+    db.refresh(db_user)
+    return {"status": "success", "risk_appetite": db_user.risk_appetite}
 
 
 @app.get(
@@ -1609,6 +1633,7 @@ def ai_chat(payload: schemas.AIChatRequest, db: Session = Depends(get_db)):
     context_lines.append(f"### User Base Profile")
     context_lines.append(f"- Name: {db_user.name or 'User'}")
     context_lines.append(f"- Base Monthly Income: ₹{db_user.monthly_income or 0:,.2f}")
+    context_lines.append(f"- Declared Risk Appetite: {db_user.risk_appetite or 'Medium'}")
 
     if budget_status:
         context_lines.append(f"- Active Budget Plan Tier: {budget_status.lifestyle_tier.upper()}")
@@ -1642,8 +1667,20 @@ def ai_chat(payload: schemas.AIChatRequest, db: Session = Depends(get_db)):
         if serialized_profile.properties:
             props = ", ".join([f"{p.property_type}: ₹{p.amount:,.2f}" for p in serialized_profile.properties])
             context_lines.append(f"    - Properties: {props}")
+        commodities_parts = []
+        if serialized_profile.gold_grams > 0:
+            commodities_parts.append(f"Gold {serialized_profile.gold_grams}g")
+        if serialized_profile.silver_grams > 0:
+            commodities_parts.append(f"Silver {serialized_profile.silver_grams}g")
+        if serialized_profile.diamond_grams > 0:
+            commodities_parts.append(f"Diamond {serialized_profile.diamond_grams}g")
+        if serialized_profile.platinum_grams > 0:
+            commodities_parts.append(f"Platinum {serialized_profile.platinum_grams}g")
+        for oc in (serialized_profile.other_commodities or []):
+            commodities_parts.append(f"{oc.commodity_name} {oc.weight_grams}g")
+        commodities_str = ", ".join(commodities_parts) if commodities_parts else "None"
         context_lines.append(
-            f"    - Precious Metals: Gold {serialized_profile.gold_grams}g, Silver {serialized_profile.silver_grams}g, Diamond {serialized_profile.diamond_grams}g, Platinum {serialized_profile.platinum_grams}g\n"
+            f"    - Commodities: {commodities_str}\n"
             f"    - Financial Assets: Stocks: ₹{serialized_profile.stocks_value:,.2f} | Mutual Funds: ₹{serialized_profile.mutual_funds_value:,.2f} | Fixed Deposits: ₹{serialized_profile.bank_fd_value:,.2f} | Post Office: ₹{serialized_profile.post_office_value:,.2f}"
         )
     if serialized_investments:
@@ -1669,9 +1706,11 @@ def ai_chat(payload: schemas.AIChatRequest, db: Session = Depends(get_db)):
         "Your objective is to provide intelligent, tailored, actionable, and encouraging financial guidance based ONLY on the user's financial context.\n"
         "Be direct, conversational, supportive, and extremely clear. "
         "Suggest solid strategies (e.g. cutting specific discretionary categories, adjusting budget tiers, setting emergency funds, scaling back wants, or pacing savings goals).\n"
+        "Always evaluate the user's current portfolio allocation against their declared risk appetite and check if their investments are over-concentrated in a single asset class (e.g. heavily skewed toward only stocks, property, or commodities).\n"
+        "If poorly diversified or not aligned with their risk profile, suggest constructive, risk-adjusted rebalancing strategies (e.g. 'Consider shifting a portion toward Fixed Deposits to lower volatility, or diversifying your equity holdings').\n"
         "Always output currency values in Indian Rupees (e.g. ₹X,XXX.XX or Lakhs/Crores if suitable).\n"
         "Do not state that you were given a markdown payload or text context. Behave naturally as an advisor who has access to the user's dashboard data.\n"
-        "Reference their actual transactions, budget targets, savings progress, and goals to provide highly specific answers."
+        "Reference their actual transactions, budget targets, savings progress, investments, and goals to provide highly specific answers."
     )
 
     prompt = (

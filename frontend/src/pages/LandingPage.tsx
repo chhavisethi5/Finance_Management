@@ -117,7 +117,7 @@ const FEATURES = [
         icon: TrendingUp,
         title: "Investments Portfolio Tracker",
         description:
-            "Log and track your portfolio across property, precious metals, stocks, and mutual funds, with a clear history view.",
+            "Log and track your portfolio across property, commodities, stocks, and mutual funds, with a clear history view.",
         accent: "from-[#ec4899] to-[#be185d]",
     },
     {
@@ -776,7 +776,7 @@ export default function LandingPage() {
                                             {[
                                                 { label: "Property Portfolio", value: "₹4,20,000", pct: "42%", icon: Building2, color: "text-[#4f8ef7]", bg: "bg-[#4f8ef7]/10" },
                                                 { label: "Equity & Mutual Funds", value: "₹3,10,000", pct: "31%", icon: Briefcase, color: "text-[#34d399]", bg: "bg-[#34d399]/10" },
-                                                { label: "Precious Metals (Gold)", value: "₹1,50,000", pct: "15%", icon: Gem, color: "text-[#fbbf24]", bg: "bg-[#fbbf24]/10" },
+                                                { label: "Commodities (Gold)", value: "₹1,50,000", pct: "15%", icon: Gem, color: "text-[#fbbf24]", bg: "bg-[#fbbf24]/10" },
                                                 { label: "Cash & Liquid", value: "₹1,20,000", pct: "12%", icon: Wallet, color: "text-[#a78bfa]", bg: "bg-[#a78bfa]/10" },
                                             ].map((asset) => (
                                                 <div

@@ -8,19 +8,19 @@ import type { InvestmentType } from "../api";
 
 export const INVESTMENT_TYPES: InvestmentType[] = [
     "Property",
-    "Precious Metals",
+    "Commodities",
     "Stocks",
     "Mutual Funds",
     "Bank FD",
     "Post Office",
 ];
 
-export const METAL_TYPES = ["Gold", "Silver", "Diamond", "Platinum"] as const;
+export const METAL_TYPES = ["Gold", "Silver", "Diamond", "Platinum", "Other"] as const;
 
 export const PROPERTY_TYPES = ["Residential", "Commercial", "Land", "Other"] as const;
 
 /** Does this investment type require the sub_type + quantity (grams) fields? */
-export const isPreciousMetal = (type: InvestmentType) => type === "Precious Metals";
+export const isCommodity = (type: InvestmentType) => type === "Commodities";
 
 /** Does this investment type require the sub_type (property type) field? */
 export const isProperty = (type: InvestmentType) => type === "Property";

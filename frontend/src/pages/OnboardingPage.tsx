@@ -50,6 +50,7 @@ export default function OnboardingPage() {
     const [name, setName] = useState("");
     const [income, setIncome] = useState("");
     const [tier, setTier] = useState("standard");
+    const [riskAppetite, setRiskAppetite] = useState<"Low" | "Medium" | "High">("Medium");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
@@ -65,6 +66,7 @@ export default function OnboardingPage() {
                 name: name.trim(),
                 monthly_income: parseFloat(income),
                 lifestyle_tier: tier,
+                risk_appetite: riskAppetite,
             });
             login(result.user);
             navigate("/dashboard");
@@ -126,6 +128,36 @@ export default function OnboardingPage() {
                                 onChange={(e) => setIncome(e.target.value)}
                                 required
                             />
+                        </div>
+
+                        {/* Risk Appetite */}
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="block text-xs font-semibold text-[#94a3b8] mb-1">Set Your Risk Appetite</label>
+                            <p className="text-[10px] text-[#64748b] mb-2 leading-relaxed">
+                                Helps MoneyMap AI evaluate if your asset allocation fits your tolerance for volatility.
+                            </p>
+                            <div className="grid grid-cols-3 gap-2 mt-1">
+                                {[
+                                    { value: "Low", label: "Low Risk", desc: "e.g. FDs, Bonds" },
+                                    { value: "Medium", label: "Medium Risk", desc: "e.g. Mutual Funds" },
+                                    { value: "High", label: "High Risk", desc: "e.g. Stocks, Growth" },
+                                ].map((r) => (
+                                    <button
+                                        key={r.value}
+                                        type="button"
+                                        onClick={() => setRiskAppetite(r.value as "Low" | "Medium" | "High")}
+                                        className={[
+                                            "flex flex-col items-center justify-center rounded-xl border p-2.5 transition-all text-center",
+                                            riskAppetite === r.value
+                                                ? "border-[#4f8ef7]/60 bg-[#4f8ef7]/10"
+                                                : "border-[#2d3348] bg-[#22263a] hover:border-[#3d4466]",
+                                        ].join(" ")}
+                                    >
+                                        <span className="text-xs font-semibold text-[#f1f5f9]">{r.label}</span>
+                                        <span className="text-[9px] text-[#64748b] mt-0.5">{r.desc}</span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
 
                         {/* Budget Plan tier */}

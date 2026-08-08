@@ -82,6 +82,7 @@ class UserResponse(BaseModel):
     name: str | None = None
     monthly_income: Decimal | None = None
     manual_savings_offset: Decimal = Decimal("0.00")
+    risk_appetite: Literal["Low", "Medium", "High"] | None = None
 
     class Config:
         from_attributes = True
@@ -260,6 +261,11 @@ class BudgetPlanResponse(BaseModel):
 # Onboarding Schemas
 # ---------------------------------------------------------------------------
 
+class RiskAppetiteUpdateRequest(BaseModel):
+    """Request body for updating risk appetite."""
+    risk_appetite: Literal["Low", "Medium", "High"]
+
+
 class OnboardingRequest(BaseModel):
     """Request body for POST /onboarding/{user_id}."""
 
@@ -271,6 +277,7 @@ class OnboardingRequest(BaseModel):
         decimal_places=2,
         description="Monthly income in INR (must be positive)",
     )
+    risk_appetite: Literal["Low", "Medium", "High"] = "Medium"
     lifestyle_tier: LifestyleTier = Field(
         ...,
         description=(
@@ -489,18 +496,18 @@ class RecurringExpenseResponse(RecurringExpenseBase):
 # ---------------------------------------------------------------------------
 
 InvestmentType = Literal[
-    "Property", "Precious Metals", "Stocks", "Mutual Funds", "Bank FD", "Post Office"
+    "Property", "Commodities", "Stocks", "Mutual Funds", "Bank FD", "Post Office"
 ]
 
 
 class InvestmentBase(BaseModel):
     investment_type: InvestmentType
     amount: Decimal = Field(..., gt=0, max_digits=12, decimal_places=2)
-    # Precious Metals -> metal name ('Gold'/'Silver'/'Diamond'/'Platinum')
+    # Commodities     -> commodity name ('Gold'/'Silver'/'Diamond'/'Platinum' or custom name)
     # Property        -> property type (e.g. 'Residential', 'Commercial', 'Land')
     # Stocks / Mutual Funds / Bank FD / Post Office -> unused
     sub_type: str | None = Field(None, max_length=100)
-    # Precious Metals -> grams. Property -> number of properties. Others -> unused.
+    # Commodities     -> grams. Property -> number of properties. Others -> unused.
     quantity: Decimal | None = Field(None, ge=0, max_digits=12, decimal_places=3)
     investment_date: date
     comment: str | None = Field(None, max_length=255)
@@ -508,10 +515,10 @@ class InvestmentBase(BaseModel):
 
     @model_validator(mode="after")
     def _validate_type_specific_fields(self):
-        if self.investment_type == "Precious Metals" and (self.quantity is None or self.quantity <= 0):
-            raise ValueError("Precious Metals investments require a quantity in grams greater than 0.")
-        if self.investment_type == "Precious Metals" and not self.sub_type:
-            raise ValueError("Precious Metals investments require a metal type (sub_type).")
+        if self.investment_type == "Commodities" and (self.quantity is None or self.quantity <= 0):
+            raise ValueError("Commodities investments require a quantity in grams greater than 0.")
+        if self.investment_type == "Commodities" and not self.sub_type:
+            raise ValueError("Commodities investments require a commodity type (sub_type).")
         if self.investment_type == "Property" and not self.sub_type:
             raise ValueError("Property investments require a property type (sub_type).")
         return self
@@ -546,10 +553,16 @@ class PropertyItem(BaseModel):
     amount: Decimal = Field(..., ge=0, max_digits=14, decimal_places=2)
 
 
+class OtherCommodityItem(BaseModel):
+    commodity_name: str = Field(..., min_length=1, max_length=100)
+    weight_grams: Decimal = Field(..., ge=0, max_digits=12, decimal_places=3)
+
+
 class InvestmentProfileUpdate(BaseModel):
     """Full replace payload for the 'Initial Past Investments Setup' summary."""
 
     properties: List[PropertyItem] = Field(default_factory=list)
+    other_commodities: List[OtherCommodityItem] = Field(default_factory=list)
     gold_grams: Decimal = Field(Decimal("0"), ge=0, max_digits=12, decimal_places=3)
     silver_grams: Decimal = Field(Decimal("0"), ge=0, max_digits=12, decimal_places=3)
     diamond_grams: Decimal = Field(Decimal("0"), ge=0, max_digits=12, decimal_places=3)

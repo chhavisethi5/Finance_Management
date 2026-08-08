@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { getAIChatResponse, getErrorMessage } from "../api";
+import { getAIChatResponse, getErrorMessage, updateRiskAppetite } from "../api";
 import type { AIChatMessage } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { Send, Bot, User as UserIcon, Sparkles } from "lucide-react";
@@ -23,12 +23,22 @@ function renderMessageContent(content: string) {
 }
 
 export default function AIChat() {
-  const { currentUser } = useAuth();
+  const { currentUser, login } = useAuth();
   const [messages, setMessages] = useState<AIChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleUpdateRiskAppetite = async (level: "Low" | "Medium" | "High") => {
+    if (!currentUser) return;
+    try {
+      await updateRiskAppetite(currentUser.id, level);
+      login({ ...currentUser, risk_appetite: level });
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to update risk appetite."));
+    }
+  };
 
   const suggestionChips = [
     "Am I on track for my monthly savings target?",
@@ -67,16 +77,41 @@ export default function AIChat() {
   return (
     <div className="flex h-full w-full flex-col bg-[#0f1117]">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-[#2d3348] bg-[#10121a] px-8 py-4 shrink-0">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#4f8ef7] to-[#a78bfa] text-white shadow-glow">
-          <Bot className="h-5 w-5" />
+      <div className="flex items-center justify-between border-b border-[#2d3348] bg-[#10121a] px-8 py-4 shrink-0 flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#4f8ef7] to-[#a78bfa] text-white shadow-glow">
+            <Bot className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-[#f1f5f9]">MoneyMap AI</h2>
+            <p className="text-[10px] text-[#94a3b8] font-medium flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#34d399] animate-pulse"></span>
+              Personalized Financial Co-pilot
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-sm font-bold text-[#f1f5f9]">MoneyMap AI</h2>
-          <p className="text-[10px] text-[#94a3b8] font-medium flex items-center gap-1">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#34d399] animate-pulse"></span>
-            Personalized Financial Co-pilot
-          </p>
+
+        {/* Risk Appetite Selector */}
+        <div className="flex items-center gap-2.5 text-xs">
+          <span className="text-[#94a3b8] font-semibold">Risk Appetite:</span>
+          <div className="flex rounded-lg border border-[#2d3348] bg-[#151827] p-0.5">
+            {["Low", "Medium", "High"].map((level) => {
+              const isActive = (currentUser?.risk_appetite || "Medium") === level;
+              return (
+                <button
+                  key={level}
+                  onClick={() => handleUpdateRiskAppetite(level as "Low" | "Medium" | "High")}
+                  className={`rounded-md px-3 py-1 text-[11px] font-semibold transition-all ${
+                    isActive
+                      ? "bg-[#4f8ef7] text-white shadow"
+                      : "text-[#64748b] hover:text-[#94a3b8]"
+                  }`}
+                >
+                  {level}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -173,22 +208,27 @@ export default function AIChat() {
         }}
         className="border-t border-[#2d3348] bg-[#10121a] px-8 py-5 shrink-0"
       >
-        <div className="max-w-3xl mx-auto w-full flex items-center gap-3">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={loading}
-            placeholder="Ask MoneyMap AI about your budgets, goals, spending habits..."
-            className="flex-1 bg-transparent py-3 text-sm text-[#f1f5f9] placeholder-[#475569] outline-none disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || loading}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#4f8ef7] to-[#6c63ff] text-white shadow-lg shadow-[#4f8ef7]/15 hover:opacity-90 active:scale-95 transition-all disabled:pointer-events-none disabled:opacity-40"
-          >
-            <Send className="h-4 w-4" />
-          </button>
+        <div className="max-w-3xl mx-auto w-full space-y-3">
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              disabled={loading}
+              placeholder="Ask MoneyMap AI about your budgets, goals, spending habits..."
+              className="flex-1 bg-transparent py-3 text-sm text-[#f1f5f9] placeholder-[#475569] outline-none disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || loading}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#4f8ef7] to-[#6c63ff] text-white shadow-lg shadow-[#4f8ef7]/15 hover:opacity-90 active:scale-95 transition-all disabled:pointer-events-none disabled:opacity-40"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="text-[10px] text-center text-[#64748b] leading-relaxed">
+            Disclaimer: MoneyMap AI provides general insights based on your portfolio data and is not professional financial advice.
+          </p>
         </div>
       </form>
     </div>

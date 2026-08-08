@@ -202,7 +202,7 @@ export default function InvestmentsPage() {
                                                         <span className="text-[#64748b]">
                                                             {" "}
                                                             · {item.quantity}
-                                                            {item.investment_type === "Precious Metals" ? " g" : item.investment_type === "Property" ? (item.quantity === 1 ? " property" : " properties") : ""}
+                                                            {item.investment_type === "Commodities" ? " g" : item.investment_type === "Property" ? (item.quantity === 1 ? " property" : " properties") : ""}
                                                         </span>
                                                     )}
                                                 </>
