@@ -216,7 +216,7 @@ class Investment(Base):
     amount = Column(Numeric(12, 2), nullable=False)
     sub_type = Column(String(100), nullable=True)
     quantity = Column(Numeric(12, 3), nullable=True)
-    investment_date = Column("date", Date, nullable=False)
+    investment_date = Column("date", Date, nullable=True)
     comment = Column(String(255), nullable=True)
     is_past = Column(Boolean, nullable=False, default=False)
 

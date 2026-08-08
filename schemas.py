@@ -534,7 +534,7 @@ class InvestmentBase(BaseModel):
     sub_type: str | None = Field(None, max_length=100)
     # Commodities     -> grams. Property -> number of properties. Others -> unused.
     quantity: Decimal | None = Field(None, ge=0, max_digits=12, decimal_places=3)
-    investment_date: date
+    investment_date: date | None = None
     comment: str | None = Field(None, max_length=255)
     is_past: bool = False
 

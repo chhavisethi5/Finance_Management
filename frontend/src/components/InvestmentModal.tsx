@@ -21,14 +21,12 @@ interface InvestmentModalProps {
     onSaved: () => void; // re-fetch parent's list after create/update
 }
 
-const today = new Date().toISOString().split("T")[0];
-
 const emptyForm = {
     investment_type: "Stocks" as InvestmentType,
     amount: "",
     sub_type: "",
     quantity: "",
-    investment_date: today,
+    investment_date: "", // Leave blank by default for optional flexibility
     comment: "",
 };
 
@@ -43,7 +41,7 @@ export default function InvestmentModal({ userId, editingItem, isPastMode, onClo
                 amount: String(editingItem.amount),
                 sub_type: editingItem.sub_type ?? "",
                 quantity: editingItem.quantity !== null ? String(editingItem.quantity) : "",
-                investment_date: editingItem.investment_date,
+                investment_date: editingItem.investment_date ?? "", // handle optional null date from DB
                 comment: editingItem.comment ?? "",
             }
             : emptyForm
@@ -124,7 +122,7 @@ export default function InvestmentModal({ userId, editingItem, isPastMode, onClo
                     ? (selectedSubtype === "Other" ? customSubtype.trim() : selectedSubtype)
                     : (form.sub_type || undefined),
                 quantity: quantityNum,
-                investment_date: form.investment_date,
+                investment_date: form.investment_date || null, // Map empty input to null
                 comment: form.comment.trim() || undefined,
                 is_past: isPast,
             };
@@ -185,7 +183,7 @@ export default function InvestmentModal({ userId, editingItem, isPastMode, onClo
 
                     {/* Amount */}
                     <div>
-                        <label className="block mb-1 font-semibold text-[#94a3b8]">Amount (₹)</label>
+                        <label className="block mb-1 font-semibold text-[#94a3b8]">Current Value (₹)</label>
                         <input
                             type="number"
                             min="0.01"
@@ -228,7 +226,7 @@ export default function InvestmentModal({ userId, editingItem, isPastMode, onClo
                             </div>
                             {selectedSubtype === "Other" && (
                                 <div>
-                                    <label className="block mb-1 font-semibold text-[#94a3b8]">Specify Commodity</label>
+                                    <label className="block mb-1 font-semibold text-[#94a3b8]">Commodity Name</label>
                                     <input
                                         type="text"
                                         placeholder="e.g. Copper, Bronze, Wheat"
@@ -273,7 +271,7 @@ export default function InvestmentModal({ userId, editingItem, isPastMode, onClo
 
                     {/* Date */}
                     <div>
-                        <label className="block mb-1 font-semibold text-[#94a3b8]">Date</label>
+                        <label className="block mb-1 font-semibold text-[#94a3b8]">Date (Optional)</label>
                         <input
                             type="date"
                             value={form.investment_date}

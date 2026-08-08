@@ -243,7 +243,7 @@ export interface Investment {
   sub_type: string | null;
   // Commodities -> grams. Property -> number of properties.
   quantity: number | null;
-  investment_date: string;
+  investment_date: string | null;
   comment: string | null;
   is_past?: boolean;
 }
@@ -254,7 +254,7 @@ export interface InvestmentCreatePayload {
   amount: number;
   sub_type?: string;
   quantity?: number;
-  investment_date: string;
+  investment_date?: string | null;
   comment?: string;
   is_past?: boolean;
 }
@@ -265,7 +265,7 @@ export interface InvestmentUpdatePayload {
   amount?: number;
   sub_type?: string;
   quantity?: number;
-  investment_date?: string;
+  investment_date?: string | null;
   comment?: string | null;
   is_past?: boolean;
 }
